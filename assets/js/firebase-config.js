@@ -4,12 +4,12 @@
 // =============================================================
 
 export const firebaseConfig = {
-  apiKey: "REPLACE_ME",
-  authDomain: "REPLACE_ME.firebaseapp.com",
-  projectId: "REPLACE_ME",
-  storageBucket: "REPLACE_ME.appspot.com",
-  messagingSenderId: "REPLACE_ME",
-  appId: "REPLACE_ME",
+  apiKey: "AIzaSyCIbHiXO3CCve5mERPeD7bOg3zwkWgIo88",
+  authDomain: "worldcup-d1228.firebaseapp.com",
+  projectId: "worldcup-d1228",
+  storageBucket: "worldcup-d1228.firebasestorage.app",
+  messagingSenderId: "549881783961",
+  appId: "1:549881783961:web:6b221a71ff168fa7073a08"
 };
 
 // =============================================================
