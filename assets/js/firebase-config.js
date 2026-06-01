@@ -17,8 +17,7 @@ export const firebaseConfig = {
 // Anyone with this password can see the leaderboard AND enter
 // official tournament results. Keep it secret.
 // =============================================================
-export const ADMIN_PASSWORD = "change-this-password";
-
+export const ADMIN_PASSWORD = "ETHANADAM";
 // =============================================================
 // YOUR EMAIL — where players send "I need a code" messages.
 // =============================================================
