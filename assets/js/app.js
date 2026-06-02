@@ -115,6 +115,58 @@ function confirmedKnockoutTeams(results) {
   return TEAM_CODES.filter((code) => selected.has(code));
 }
 
+function hasSavedLogin() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+    return Boolean(saved?.code);
+  } catch {
+    forgetLogin();
+    return false;
+  }
+}
+
+function showLoadingMessage(text = "Loading") {
+  const loading = $("#loading");
+  if (!loading) return;
+
+  if (!$("#loading-spinner-style")) {
+    const style = document.createElement("style");
+    style.id = "loading-spinner-style";
+    style.textContent = `
+      .loading-spinner {
+        width: 42px;
+        height: 42px;
+        border: 3px solid rgba(244,237,224,0.22);
+        border-top-color: var(--orange);
+        border-radius: 50%;
+        animation: loading-spin .8s linear infinite;
+      }
+      .loading-text {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        letter-spacing: .22em;
+        text-transform: uppercase;
+      }
+      @keyframes loading-spin {
+        to { transform: rotate(360deg); }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  loading.classList.remove("is-fading");
+  loading.innerHTML = `
+    <div class="loading-spinner" aria-hidden="true"></div>
+    <div class="loading-text">${escapeHtml(text)}</div>`;
+}
+
+function hideLoading() {
+  const loading = $("#loading");
+  if (!loading) return;
+  loading.classList.add("is-fading");
+  setTimeout(() => loading.remove(), 400);
+}
+
 function rememberLogin() {
   if (!session.code || !session.name || session.isTest) return;
   localStorage.setItem(SESSION_KEY, JSON.stringify({ code: session.code, name: session.name }));
@@ -891,17 +943,27 @@ function init() {
   prepareLoginForm();
 
   // Hide loader
-  setTimeout(async () => {
-    $("#loading").classList.add("is-fading");
-    setTimeout(() => $("#loading").remove(), 400);
-    try {
-      if (await restoreLogin()) return;
-    } catch (e) {
-      console.error(e);
-      forgetLogin();
-    }
-    show("view-login");
-  }, 600);
+  if (hasSavedLogin()) {
+    showLoadingMessage("Loading");
+    setTimeout(async () => {
+      try {
+        if (await restoreLogin()) {
+          hideLoading();
+          return;
+        }
+      } catch (e) {
+        console.error(e);
+        forgetLogin();
+      }
+      show("view-login");
+      hideLoading();
+    }, 600);
+  } else {
+    setTimeout(() => {
+      show("view-login");
+      hideLoading();
+    }, 600);
+  }
 
   // Login form
   $("#login-form").addEventListener("submit", (e) => {
