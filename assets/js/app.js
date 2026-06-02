@@ -132,20 +132,16 @@ async function restoreLogin() {
     forgetLogin();
     return false;
   }
-  if (!saved?.code || !saved?.name) return false;
+  if (!saved?.code) return false;
 
   const codeDoc = await fetchCodeDoc(saved.code);
   if (!codeDoc) {
     forgetLogin();
     return false;
   }
-  if (codeDoc.claimed && codeDoc.name && codeDoc.name.toLowerCase() !== saved.name.toLowerCase()) {
-    forgetLogin();
-    return false;
-  }
 
   session.code = saved.code;
-  session.name = saved.name;
+  session.name = codeDoc.name || saved.name || "Player";
   session.isTest = false;
   session.predictions = (await fetchPredictions(saved.code)) || { groups: {}, bracket: {} };
   await launchApp();
@@ -210,16 +206,29 @@ function showLoginError(msg) {
 }
 function clearLoginError() { $("#login-error").hidden = true; }
 
+function prepareLoginForm() {
+  const nameInput = $("#login-name");
+  if (nameInput) {
+    nameInput.required = false;
+    nameInput.removeAttribute("required");
+    nameInput.placeholder = "First time only";
+  }
+
+  const notes = $$(".login-card .login-sub");
+  if (notes[0]) notes[0].textContent = "Enter your access code to open your predictions. Add your name only the first time you use a new code.";
+  if (notes[1]) notes[1].textContent = "Already used your code? You can leave the name box blank.";
+}
+
 async function attemptLogin(rawCode, rawName) {
   clearLoginError();
   const code = rawCode.trim().toUpperCase();
   const name = rawName.trim();
-  if (!code || !name) { showLoginError("Please enter a code AND your name."); return; }
+  if (!code) { showLoginError("Please enter your access code."); return; }
 
   // Secret test login
   if (code === "TEST") {
     session.code   = "TEST";
-    session.name   = name;
+    session.name   = name || "Test player";
     session.isTest = true;
     // Initialise / ensure an in-memory predictions object for the tester
     session.predictions = (await fetchPredictions("TEST")) || { groups: {}, bracket: {} };
@@ -240,19 +249,19 @@ async function attemptLogin(rawCode, rawName) {
     showLoginError("That code doesn't look right. Double-check the letters / numbers.");
     return;
   }
-  if (codeDoc.claimed && codeDoc.name && codeDoc.name.toLowerCase() !== name.toLowerCase()) {
-    showLoginError(`This code is already claimed by "${codeDoc.name}". If that's you, use the same name.`);
-    return;
-  }
 
   // Claim if first time
   if (!codeDoc.claimed) {
+    if (!name) {
+      showLoginError("Please enter your name the first time you use a new code.");
+      return;
+    }
     try { await claimCode(code, name); }
     catch (e) { showLoginError("Couldn't claim that code. Try again."); console.error(e); return; }
   }
 
   session.code   = code;
-  session.name   = name;
+  session.name   = codeDoc.claimed ? (codeDoc.name || name || "Player") : name;
   session.isTest = false;
   session.predictions = (await fetchPredictions(code)) || { groups: {}, bracket: {} };
   rememberLogin();
@@ -879,6 +888,8 @@ async function seedCodes() {
 // EVENT WIRING
 // -----------------------------------------------------------------
 function init() {
+  prepareLoginForm();
+
   // Hide loader
   setTimeout(async () => {
     $("#loading").classList.add("is-fading");
