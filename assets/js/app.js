@@ -27,6 +27,7 @@ const session = {
   isTest:   false,
   predictions: null, // their predictions doc
 };
+const SESSION_KEY = "fwc26-login";
 
 const TEAM_CODES = Object.keys(TEAMS);
 const BRACKET_ROUNDS = [
@@ -112,6 +113,43 @@ function asList(value) {
 function confirmedKnockoutTeams(results) {
   const selected = new Set(asList(results.bracket?.r32));
   return TEAM_CODES.filter((code) => selected.has(code));
+}
+
+function rememberLogin() {
+  if (!session.code || !session.name || session.isTest) return;
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ code: session.code, name: session.name }));
+}
+
+function forgetLogin() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+async function restoreLogin() {
+  let saved;
+  try {
+    saved = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+  } catch {
+    forgetLogin();
+    return false;
+  }
+  if (!saved?.code || !saved?.name) return false;
+
+  const codeDoc = await fetchCodeDoc(saved.code);
+  if (!codeDoc) {
+    forgetLogin();
+    return false;
+  }
+  if (codeDoc.claimed && codeDoc.name && codeDoc.name.toLowerCase() !== saved.name.toLowerCase()) {
+    forgetLogin();
+    return false;
+  }
+
+  session.code = saved.code;
+  session.name = saved.name;
+  session.isTest = false;
+  session.predictions = (await fetchPredictions(saved.code)) || { groups: {}, bracket: {} };
+  await launchApp();
+  return true;
 }
 
 // -----------------------------------------------------------------
@@ -217,6 +255,7 @@ async function attemptLogin(rawCode, rawName) {
   session.name   = name;
   session.isTest = false;
   session.predictions = (await fetchPredictions(code)) || { groups: {}, bracket: {} };
+  rememberLogin();
   await launchApp();
 }
 
@@ -841,9 +880,15 @@ async function seedCodes() {
 // -----------------------------------------------------------------
 function init() {
   // Hide loader
-  setTimeout(() => {
+  setTimeout(async () => {
     $("#loading").classList.add("is-fading");
     setTimeout(() => $("#loading").remove(), 400);
+    try {
+      if (await restoreLogin()) return;
+    } catch (e) {
+      console.error(e);
+      forgetLogin();
+    }
     show("view-login");
   }, 600);
 
@@ -855,6 +900,7 @@ function init() {
 
   // Sign out
   $("#btn-signout").addEventListener("click", () => {
+    forgetLogin();
     session.code = session.name = session.predictions = null;
     session.isTest = false;
     show("view-login");
