@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>FWC 26 — Predictions Pool</title>
+  <meta name="theme-color" content="#0B1D3A" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=DM+Sans:ital,wght@0,400;0,500;0,700;1,400&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+
+  <!-- =================================================================
+       LOADING SCREEN
+       ================================================================= -->
+  <div id="loading" class="loading-screen">
+    <div class="loading-mark">FWC<span>26</span></div>
+    <div class="loading-bar"></div>
+  </div>
+
+  <!-- =================================================================
+       LOGIN VIEW
+       ================================================================= -->
+  <section id="view-login" class="view view--login hidden">
+    <div class="login-bg" aria-hidden="true"></div>
+
+    <header class="login-header">
+      <div class="brand">
+        <span class="brand-mark">FWC<sup>26</sup></span>
+        <span class="brand-tag">Predictions Pool</span>
+      </div>
+      <div class="login-meta">
+        <span>USA · CAN · MEX</span>
+        <span class="dot">·</span>
+        <span>11 Jun — 19 Jul 2026</span>
+      </div>
+    </header>
+
+    <main class="login-main">
+      <div class="login-card">
+        <div class="login-card__crest">
+          <svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <polygon points="30,4 56,22 46,54 14,54 4,22" fill="none" stroke="currentColor" stroke-width="2.5" />
+            <text x="30" y="38" text-anchor="middle" font-family="Big Shoulders Display" font-weight="900" font-size="22" fill="currentColor">26</text>
+          </svg>
+        </div>
+        <h1 class="login-title">
+          <span class="login-title__line1">Predict</span>
+          <span class="login-title__line2">the World</span>
+          <span class="login-title__line3">Cup.</span>
+        </h1>
+        <p class="login-sub">Enter your access code and your name to save your predictions. Most correct picks across the tournament wins a prize.</p>
+        <p class="login-sub">Already used your code? Enter the same code and the same name you first used to get back in.</p>
+
+        <form id="login-form" class="login-form" autocomplete="off">
+          <label class="field">
+            <span class="field__label">Access code</span>
+            <input id="login-code" name="code" type="text" maxlength="12" required spellcheck="false" autocapitalize="characters" placeholder="ABCDEF" />
+          </label>
+          <label class="field">
+            <span class="field__label">Your name</span>
+            <input id="login-name" name="name" type="text" maxlength="32" required placeholder="e.g. Ethan R" />
+          </label>
+
+          <div id="login-error" class="login-error" role="alert" hidden></div>
+
+          <button type="submit" class="btn btn--primary" id="login-submit">
+            <span>Lock in &amp; play</span>
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M1 8h12M9 4l4 4-4 4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="square" /></svg>
+          </button>
+        </form>
+
+        <div class="login-divider"><span>or</span></div>
+
+        <div class="login-secondary">
+          <button type="button" class="btn btn--ghost" id="btn-no-code">
+            <span>I don't have a code</span>
+          </button>
+          <button type="button" class="btn btn--ghost" id="btn-admin">
+            <span>Admin access</span>
+          </button>
+        </div>
+      </div>
+
+      <aside class="login-aside">
+        <div class="aside-block">
+          <div class="aside-num">FREE</div>
+          <div class="aside-label">to enter</div>
+        </div>
+        <div class="aside-block">
+          <div class="aside-num">🏆</div>
+          <div class="aside-label">winner gets a prize</div>
+        </div>
+        <div class="aside-block">
+          <div class="aside-num">104</div>
+          <div class="aside-label">matches to predict</div>
+        </div>
+        <div class="aside-quote">
+          <p>“Most correct predictions across all 104 matches wins.”</p>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="login-footer">
+      <span>House rules · One code per player · Predictions lock at kick-off of Match 1</span>
+    </footer>
+  </section>
+
+  <!-- =================================================================
+       PREDICTIONS VIEW (group stage + bracket)
+       ================================================================= -->
+  <section id="view-predictions" class="view view--app hidden">
+    <header class="app-header">
+      <div class="app-brand">
+        <span class="brand-mark">FWC<sup>26</sup></span>
+        <span class="app-brand__tag">Pool</span>
+      </div>
+      <nav class="app-tabs" id="app-tabs">
+        <button class="app-tab is-active" data-tab="groups">Group stage</button>
+        <button class="app-tab" data-tab="bracket">Bracket</button>
+        <button class="app-tab" data-tab="leaderboard">Leaderboard</button>
+      </nav>
+      <div class="app-user">
+        <span class="app-user__name" id="user-name-display">—</span>
+        <span class="app-user__sep">·</span>
+        <span class="app-user__score" id="user-score-display">0 pts</span>
+        <button class="app-user__signout" id="btn-signout" title="Sign out">↩</button>
+      </div>
+    </header>
+
+    <!-- GROUP STAGE TAB -->
+    <div class="tab-panel" id="tab-groups">
+      <div class="panel-intro">
+        <h2 class="panel-title">Group stage — 72 matches</h2>
+        <p class="panel-sub">Pick the <strong>winner</strong> for every game (or a draw), and predict the <strong>exact score</strong> for bonus points.</p>
+        <div class="scoring-key">
+          <span><i class="dot-orange"></i>Correct outcome <strong>+3</strong></span>
+          <span><i class="dot-blue"></i>Exact score <strong>+7 bonus</strong></span>
+        </div>
+      </div>
+      <div id="groups-container" class="groups-container"></div>
+      <div class="save-bar">
+        <div class="save-bar__status" id="groups-save-status">Saved automatically</div>
+        <div class="save-bar__progress" id="groups-progress">0 / 72 predicted</div>
+      </div>
+    </div>
+
+    <!-- BRACKET TAB -->
+    <div class="tab-panel hidden" id="tab-bracket">
+      <div class="panel-intro">
+        <h2 class="panel-title">Knockout bracket</h2>
+        <p class="panel-sub">After admin confirms the Round of 32, pick which teams make it to each later round. The further they go, the more points each correct pick is worth.</p>
+        <div class="scoring-key scoring-key--bracket">
+          <span><strong>R16</strong> +4/team</span>
+          <span><strong>QF</strong> +7/team</span>
+          <span><strong>SF</strong> +12/team</span>
+          <span><strong>Final</strong> +20/team</span>
+          <span><strong>3rd</strong> +25</span>
+          <span><strong>Champion</strong> +40</span>
+        </div>
+      </div>
+      <div id="bracket-container" class="bracket-container"></div>
+      <div class="save-bar">
+        <div class="save-bar__status" id="bracket-save-status">Saved automatically</div>
+      </div>
+    </div>
+
+    <!-- LEADERBOARD TAB -->
+    <div class="tab-panel hidden" id="tab-leaderboard">
+      <div class="panel-intro">
+        <h2 class="panel-title">Leaderboard</h2>
+        <p class="panel-sub">Points are awarded as matches finish and results are entered.</p>
+      </div>
+      <div id="leaderboard-container" class="leaderboard"></div>
+    </div>
+  </section>
+
+  <!-- =================================================================
+       ADMIN VIEW
+       ================================================================= -->
+  <section id="view-admin" class="view view--admin hidden">
+    <header class="app-header app-header--admin">
+      <div class="app-brand">
+        <span class="brand-mark">FWC<sup>26</sup></span>
+        <span class="app-brand__tag app-brand__tag--admin">Admin</span>
+      </div>
+      <button class="btn btn--ghost btn--small" id="btn-admin-back">← Back to login</button>
+    </header>
+
+    <!-- Admin password gate -->
+    <div id="admin-gate" class="admin-gate">
+      <div class="login-card login-card--admin">
+        <h2 class="login-title login-title--admin">Admin</h2>
+        <p class="login-sub">Enter the admin password to see the leaderboard and enter results.</p>
+        <form id="admin-pw-form" autocomplete="off">
+          <label class="field">
+            <span class="field__label">Password</span>
+            <input id="admin-pw" type="password" required />
+          </label>
+          <div id="admin-pw-error" class="login-error" hidden></div>
+          <button type="submit" class="btn btn--primary"><span>Enter</span></button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Admin tools (shown after pw) -->
+    <div id="admin-tools" class="admin-tools hidden">
+      <nav class="app-tabs app-tabs--admin">
+        <button class="app-tab is-active" data-admin-tab="leaderboard">Leaderboard</button>
+        <button class="app-tab" data-admin-tab="results">Enter results</button>
+        <button class="app-tab" data-admin-tab="codes">Codes</button>
+        <button class="app-tab" data-admin-tab="setup">Setup</button>
+      </nav>
+
+      <div class="admin-panel" id="admin-tab-leaderboard">
+        <h3 class="panel-title">Live leaderboard</h3>
+        <div id="admin-leaderboard"></div>
+      </div>
+
+      <div class="admin-panel hidden" id="admin-tab-results">
+        <h3 class="panel-title">Enter official results</h3>
+        <p class="panel-sub">Update results as matches finish. Scores recalculate immediately.</p>
+        <div id="admin-results"></div>
+      </div>
+
+      <div class="admin-panel hidden" id="admin-tab-codes">
+        <h3 class="panel-title">Codes</h3>
+        <div id="admin-codes"></div>
+      </div>
+
+      <div class="admin-panel hidden" id="admin-tab-setup">
+        <h3 class="panel-title">First-time setup</h3>
+        <p class="panel-sub">Run this once after deploying. It generates 100 fresh codes and writes them to Firestore so players can claim them.</p>
+        <button class="btn btn--primary" id="btn-seed-codes"><span>Generate &amp; seed 100 codes</span></button>
+        <div id="seed-output"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =================================================================
+       MODAL — "no code" email
+       ================================================================= -->
+  <div id="modal-no-code" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal__backdrop" data-close-modal></div>
+    <div class="modal__card">
+      <button class="modal__close" data-close-modal aria-label="Close">×</button>
+      <h3 class="modal__title">Request a code</h3>
+      <p class="modal__sub">Tap below to open your email app with a pre-written message to Ethan. Free to enter — the winner gets a prize.</p>
+      <a id="no-code-mailto" class="btn btn--primary btn--block" href="#"><span>Open email app</span></a>
+      <p class="modal__hint">If the button doesn't work, email <span id="no-code-email-display">—</span> with your name.</p>
+    </div>
+  </div>
+
+  <!-- Firebase + app -->
+  <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
