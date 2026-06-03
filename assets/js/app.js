@@ -804,12 +804,58 @@ function ensureAdminPredictionGraphStyles() {
   style.id = "admin-prediction-graph-style";
   style.textContent = `
     .admin-prediction-graph {
-      grid-column: 1 / -1;
       background: rgba(255,255,255,0.55);
       border: 1px solid var(--paper-line);
       border-radius: 8px;
-      margin-top: 2px;
       padding: 10px 12px;
+    }
+    .admin-graphs-group { margin-top: 28px; }
+    .admin-graphs-group:first-child { margin-top: 0; }
+    .admin-graphs-group__title {
+      font-family: var(--font-display);
+      font-size: 28px;
+      font-weight: 900;
+      color: var(--navy);
+      margin: 0 0 10px;
+    }
+    .admin-graphs-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 14px;
+    }
+    .prediction-game-card {
+      background: rgba(255,255,255,0.55);
+      border: 1.5px solid var(--paper-line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .prediction-game-card__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: var(--navy);
+      color: var(--paper);
+      padding: 10px 12px;
+    }
+    .prediction-game-card__teams {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .prediction-game-card__meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: rgba(244,237,224,.72);
+      white-space: nowrap;
+    }
+    .prediction-game-card .admin-prediction-graph {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
     }
     .admin-prediction-graph__title {
       font-family: var(--font-mono);
@@ -861,6 +907,8 @@ function ensureAdminPredictionGraphStyles() {
       font-size: 12px;
     }
     @media (max-width: 700px) {
+      .admin-graphs-grid { grid-template-columns: 1fr; }
+      .prediction-game-card__head { align-items: flex-start; flex-direction: column; }
       .prediction-graph-row { grid-template-columns: 72px 1fr 34px; }
       .prediction-graph-names { grid-column: 1 / -1; }
     }
@@ -945,11 +993,71 @@ function renderAdminPredictionGraph(match, stats) {
     </div>`;
 }
 
+function renderAdminGraphCard(match, stats) {
+  return `
+    <div class="prediction-game-card">
+      <div class="prediction-game-card__head">
+        <div class="prediction-game-card__teams">
+          <span>${String(match.id).padStart(2, "0")}</span>
+          <img class="team-flag" src="${flagUrl(TEAMS[match.home].iso)}" alt="" />
+          <span>${match.home} v ${match.away}</span>
+          <img class="team-flag" src="${flagUrl(TEAMS[match.away].iso)}" alt="" />
+        </div>
+        <div class="prediction-game-card__meta">${formatDate(match.date)} · ${match.time} UK</div>
+      </div>
+      ${renderAdminPredictionGraph(match, stats)}
+    </div>`;
+}
+
+function ensureAdminGraphsTab() {
+  const tabs = $(".app-tabs--admin");
+  const tools = $("#admin-tools");
+  if (!tabs || !tools || $('[data-admin-tab="graphs"]', tabs)) return;
+
+  const btn = document.createElement("button");
+  btn.className = "app-tab";
+  btn.type = "button";
+  btn.dataset.adminTab = "graphs";
+  btn.textContent = "Prediction graphs";
+  const setupTab = $('[data-admin-tab="setup"]', tabs);
+  tabs.insertBefore(btn, setupTab || null);
+
+  const panel = document.createElement("div");
+  panel.className = "admin-panel hidden";
+  panel.id = "admin-tab-graphs";
+  panel.innerHTML = `
+    <h3 class="panel-title">Prediction graphs</h3>
+    <p class="panel-sub">Read-only view of what players have predicted for each group game.</p>
+    <div id="admin-graphs"></div>`;
+  const resultsPanel = $("#admin-tab-results");
+  if (resultsPanel?.parentNode) resultsPanel.parentNode.insertBefore(panel, resultsPanel.nextSibling);
+  else tools.appendChild(panel);
+}
+
+async function renderAdminGraphs() {
+  ensureAdminPredictionGraphStyles();
+  const root = $("#admin-graphs");
+  if (!root) return;
+  root.innerHTML = `<div style="opacity:.6">Loading…</div>`;
+  const predictions = await fetchAllPredictions();
+  const predictionStats = buildGroupPredictionStats(predictions);
+  const groupKeys = Object.keys(GROUPS);
+
+  root.innerHTML = groupKeys.map((group) => {
+    const matches = GROUP_MATCHES.filter((m) => m.group === group);
+    return `
+      <section class="admin-graphs-group">
+        <h4 class="admin-graphs-group__title">Group ${group}</h4>
+        <div class="admin-graphs-grid">
+          ${matches.map((match) => renderAdminGraphCard(match, predictionStats[match.id])).join("")}
+        </div>
+      </section>`;
+  }).join("");
+}
+
 async function renderAdminResults() {
   const root = $("#admin-results");
-  ensureAdminPredictionGraphStyles();
-  const [results, predictions] = await Promise.all([fetchResults(), fetchAllPredictions()]);
-  const predictionStats = buildGroupPredictionStats(predictions);
+  const results = await fetchResults();
   results.groups  = results.groups  || {};
   results.bracket = results.bracket || {};
 
@@ -976,7 +1084,6 @@ async function renderAdminResults() {
         <div class="result-row__outcome">
           ${btn("HOME", "H")}${btn("DRAW", "D")}${btn("AWAY", "A")}
         </div>
-        ${renderAdminPredictionGraph(m, predictionStats[m.id])}
       </div>`;
   }).join("");
 
@@ -1154,6 +1261,7 @@ async function seedCodes() {
 // -----------------------------------------------------------------
 function init() {
   prepareLoginForm();
+  ensureAdminGraphsTab();
 
   // Hide loader
   if (hasSavedLogin()) {
@@ -1242,11 +1350,12 @@ Thanks!`
       $$(".app-tabs--admin .app-tab").forEach((b) => b.classList.remove("is-active"));
       btn.classList.add("is-active");
       const t = btn.dataset.adminTab;
-      ["leaderboard", "results", "codes", "setup"].forEach((key) => {
+      ["leaderboard", "results", "graphs", "codes", "setup"].forEach((key) => {
         $("#admin-tab-" + key).classList.toggle("hidden", key !== t);
       });
       if (t === "leaderboard") renderAdminLeaderboard();
       if (t === "results")     renderAdminResults();
+      if (t === "graphs")      renderAdminGraphs();
       if (t === "codes")       renderAdminCodes();
     });
   });
