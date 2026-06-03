@@ -28,6 +28,7 @@ const session = {
   predictions: null, // their predictions doc
 };
 const SESSION_KEY = "fwc26-login";
+const ADMIN_SESSION_KEY = "fwc26-admin-login";
 const PREDICTION_LOCK_MS = 60 * 60 * 1000;
 const UK_SUMMER_OFFSET_MINUTES = 60; // World Cup 2026 runs while the UK is on BST.
 
@@ -750,15 +751,28 @@ function escapeHtml(s) {
 // -----------------------------------------------------------------
 // ADMIN
 // -----------------------------------------------------------------
+function hasAdminLogin() {
+  return localStorage.getItem(ADMIN_SESSION_KEY) === ADMIN_PASSWORD;
+}
+
+function rememberAdminLogin() {
+  localStorage.setItem(ADMIN_SESSION_KEY, ADMIN_PASSWORD);
+}
+
 function gotoAdmin() {
   show("view-admin");
+  if (hasAdminLogin()) {
+    unlockAdmin(false);
+    return;
+  }
   $("#admin-gate").classList.remove("hidden");
   $("#admin-tools").classList.add("hidden");
   $("#admin-pw").value = "";
   $("#admin-pw-error").hidden = true;
 }
 
-function unlockAdmin() {
+function unlockAdmin(remember = true) {
+  if (remember) rememberAdminLogin();
   $("#admin-gate").classList.add("hidden");
   $("#admin-tools").classList.remove("hidden");
   renderAdminLeaderboard();
@@ -784,9 +798,158 @@ async function renderAdminLeaderboard() {
     </div>`;
 }
 
+function ensureAdminPredictionGraphStyles() {
+  if ($("#admin-prediction-graph-style")) return;
+  const style = document.createElement("style");
+  style.id = "admin-prediction-graph-style";
+  style.textContent = `
+    .admin-prediction-graph {
+      grid-column: 1 / -1;
+      background: rgba(255,255,255,0.55);
+      border: 1px solid var(--paper-line);
+      border-radius: 8px;
+      margin-top: 2px;
+      padding: 10px 12px;
+    }
+    .admin-prediction-graph__title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: var(--ink-mute);
+      margin-bottom: 8px;
+    }
+    .prediction-graph-row {
+      display: grid;
+      grid-template-columns: 86px minmax(120px, 1fr) 42px;
+      gap: 8px;
+      align-items: start;
+      margin-top: 8px;
+    }
+    .prediction-graph-label,
+    .prediction-graph-count {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--navy);
+    }
+    .prediction-graph-count { text-align: right; }
+    .prediction-graph-bar {
+      height: 10px;
+      background: rgba(11,29,58,.12);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-top: 2px;
+    }
+    .prediction-graph-fill {
+      height: 100%;
+      background: var(--orange);
+    }
+    .prediction-graph-names {
+      grid-column: 2 / -1;
+      color: var(--ink-soft);
+      font-size: 12px;
+      line-height: 1.35;
+      max-height: 64px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .prediction-graph-missing {
+      margin-top: 8px;
+      color: var(--ink-mute);
+      font-size: 12px;
+    }
+    @media (max-width: 700px) {
+      .prediction-graph-row { grid-template-columns: 72px 1fr 34px; }
+      .prediction-graph-names { grid-column: 1 / -1; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function predictionScoreLabel(pred) {
+  if (typeof pred.scoreHome === "number" && typeof pred.scoreAway === "number") {
+    return ` (${pred.scoreHome}-${pred.scoreAway})`;
+  }
+  return "";
+}
+
+function buildGroupPredictionStats(predictions) {
+  const players = predictions.filter((p) => p.code !== "TEST");
+  const stats = {};
+  GROUP_MATCHES.forEach((match) => {
+    stats[match.id] = { total: players.length, HOME: [], DRAW: [], AWAY: [], missing: 0 };
+  });
+
+  players.forEach((player) => {
+    const groups = player.groups || {};
+    GROUP_MATCHES.forEach((match) => {
+      const pred = groups[match.id];
+      const bucket = stats[match.id];
+      if (!pred || !["HOME", "DRAW", "AWAY"].includes(pred.winner)) {
+        bucket.missing += 1;
+        return;
+      }
+      bucket[pred.winner].push({
+        name: player.name || player.code || "Player",
+        score: predictionScoreLabel(pred),
+      });
+    });
+  });
+
+  return stats;
+}
+
+function renderPredictionNameList(items) {
+  if (!items.length) return `<span style="opacity:.55">None</span>`;
+  return items
+    .map((item) => `<span>${escapeHtml(item.name)}${escapeHtml(item.score)}</span>`)
+    .join(", ");
+}
+
+function renderAdminPredictionGraph(match, stats) {
+  if (!stats || !stats.total) {
+    return `
+      <div class="admin-prediction-graph">
+        <div class="admin-prediction-graph__title">Prediction graph</div>
+        <div class="prediction-graph-missing">No saved predictions yet.</div>
+      </div>`;
+  }
+
+  const choices = [
+    { key: "HOME", label: `${match.home} win` },
+    { key: "DRAW", label: "Draw" },
+    { key: "AWAY", label: `${match.away} win` },
+  ];
+
+  return `
+    <div class="admin-prediction-graph">
+      <div class="admin-prediction-graph__title">Prediction graph (${stats.total} players)</div>
+      ${choices.map((choice) => {
+        const items = stats[choice.key] || [];
+        const percent = Math.round((items.length / stats.total) * 100);
+        return `
+          <div class="prediction-graph-row">
+            <div class="prediction-graph-label">${choice.label}</div>
+            <div>
+              <div class="prediction-graph-bar">
+                <div class="prediction-graph-fill" style="width:${percent}%"></div>
+              </div>
+            </div>
+            <div class="prediction-graph-count">${items.length}</div>
+            <div class="prediction-graph-names">${renderPredictionNameList(items)}</div>
+          </div>`;
+      }).join("")}
+      ${stats.missing ? `<div class="prediction-graph-missing">${stats.missing} players have not picked this game yet.</div>` : ""}
+    </div>`;
+}
+
 async function renderAdminResults() {
   const root = $("#admin-results");
-  const results = await fetchResults();
+  ensureAdminPredictionGraphStyles();
+  const [results, predictions] = await Promise.all([fetchResults(), fetchAllPredictions()]);
+  const predictionStats = buildGroupPredictionStats(predictions);
   results.groups  = results.groups  || {};
   results.bracket = results.bracket || {};
 
@@ -813,6 +976,7 @@ async function renderAdminResults() {
         <div class="result-row__outcome">
           ${btn("HOME", "H")}${btn("DRAW", "D")}${btn("AWAY", "A")}
         </div>
+        ${renderAdminPredictionGraph(m, predictionStats[m.id])}
       </div>`;
   }).join("");
 
@@ -1082,6 +1246,7 @@ Thanks!`
         $("#admin-tab-" + key).classList.toggle("hidden", key !== t);
       });
       if (t === "leaderboard") renderAdminLeaderboard();
+      if (t === "results")     renderAdminResults();
       if (t === "codes")       renderAdminCodes();
     });
   });
