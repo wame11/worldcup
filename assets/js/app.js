@@ -28,7 +28,6 @@ const session = {
   predictions: null, // their predictions doc
 };
 const SESSION_KEY = "fwc26-login";
-const ADMIN_SESSION_KEY = "fwc26-admin-login";
 const PREDICTION_LOCK_MS = 60 * 60 * 1000;
 const UK_SUMMER_OFFSET_MINUTES = 60; // World Cup 2026 runs while the UK is on BST.
 
@@ -751,28 +750,15 @@ function escapeHtml(s) {
 // -----------------------------------------------------------------
 // ADMIN
 // -----------------------------------------------------------------
-function hasAdminLogin() {
-  return localStorage.getItem(ADMIN_SESSION_KEY) === ADMIN_PASSWORD;
-}
-
-function rememberAdminLogin() {
-  localStorage.setItem(ADMIN_SESSION_KEY, ADMIN_PASSWORD);
-}
-
 function gotoAdmin() {
   show("view-admin");
-  if (hasAdminLogin()) {
-    unlockAdmin(false);
-    return;
-  }
   $("#admin-gate").classList.remove("hidden");
   $("#admin-tools").classList.add("hidden");
   $("#admin-pw").value = "";
   $("#admin-pw-error").hidden = true;
 }
 
-function unlockAdmin(remember = true) {
-  if (remember) rememberAdminLogin();
+function unlockAdmin() {
   $("#admin-gate").classList.add("hidden");
   $("#admin-tools").classList.remove("hidden");
   renderAdminLeaderboard();
@@ -1262,6 +1248,7 @@ async function seedCodes() {
 function init() {
   prepareLoginForm();
   ensureAdminGraphsTab();
+  localStorage.removeItem("fwc26-admin-login");
 
   // Hide loader
   if (hasSavedLogin()) {
