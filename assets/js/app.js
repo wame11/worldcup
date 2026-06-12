@@ -773,9 +773,12 @@ const bracketSaveDebounced = debounce(async () => {
 // -----------------------------------------------------------------
 // SCORING
 // -----------------------------------------------------------------
+// -----------------------------------------------------------------
+// SCORING
+// -----------------------------------------------------------------
 const GROUP_OUTCOME_POINTS = 6;
 const GROUP_ONE_SCORE_POINTS = 7;
-const GROUP_EXACT_SCORE_POINTS = 14;
+const GROUP_EXACT_BONUS_POINTS = 14;
 
 function toScoreNumber(value) {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -799,12 +802,12 @@ function scoreOnePerson(p, results) {
   let total = 0;
   let correct = 0;
 
+  // Group stage
   const gp = p.groups || {};
   const gr = results.groups || {};
 
   for (const [id, pred] of Object.entries(gp)) {
     const r = gr[id];
-
     if (!r || !pred) continue;
 
     const predHome = toScoreNumber(pred.scoreHome);
@@ -820,6 +823,11 @@ function scoreOnePerson(p, results) {
 
     if (!realWinner && !hasRealScore) continue;
 
+    const correctOutcome =
+      predictedWinner &&
+      realWinner &&
+      predictedWinner === realWinner;
+
     const exactScore =
       hasPredictedScore &&
       hasRealScore &&
@@ -832,27 +840,22 @@ function scoreOnePerson(p, results) {
       !exactScore &&
       (predHome === realHome || predAway === realAway);
 
-    const correctOutcome =
-      predictedWinner &&
-      realWinner &&
-      predictedWinner === realWinner;
-
-    let matchPoints = 0;
-
     if (exactScore) {
-      matchPoints = GROUP_EXACT_SCORE_POINTS;
+      // Correct outcome + exact score bonus = 20 total.
+      total += GROUP_OUTCOME_POINTS + GROUP_EXACT_BONUS_POINTS;
+      correct += 2;
     } else if (oneTeamScoreCorrect) {
-      matchPoints = GROUP_ONE_SCORE_POINTS;
+      // One correct team score = 7 total.
+      total += GROUP_ONE_SCORE_POINTS;
+      correct += 1;
     } else if (correctOutcome) {
-      matchPoints = GROUP_OUTCOME_POINTS;
-    }
-
-    if (matchPoints > 0) {
-      total += matchPoints;
+      // Correct win / draw / loss only = 6 total.
+      total += GROUP_OUTCOME_POINTS;
       correct += 1;
     }
   }
 
+  // Bracket
   const bp = p.bracket || {};
   const br = results.bracket || {};
 
@@ -868,6 +871,7 @@ function scoreOnePerson(p, results) {
     correct += hits;
   }
 
+  // Trophy picks
   if (results.champion && bp.champion === results.champion) {
     total += SCORING.champion;
     correct += 1;
@@ -878,10 +882,7 @@ function scoreOnePerson(p, results) {
     correct += 1;
   }
 
-  return {
-    total,
-    correct,
-  };
+  return { total, correct };
 }
 
 async function computeLeaderboard() {
