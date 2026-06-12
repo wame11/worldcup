@@ -5,6 +5,7 @@
 import {
   initializeApp,
 } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+
 import {
   getDatabase, ref, get, set, update, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-database.js";
@@ -16,35 +17,38 @@ import { TEAMS, GROUPS, GROUP_MATCHES, KNOCKOUT_MATCHES, SCORING } from "./data.
 // Firebase init
 // -----------------------------------------------------------------
 const fbApp = initializeApp(firebaseConfig);
-const db    = getDatabase(fbApp);
+const db = getDatabase(fbApp);
 
 // -----------------------------------------------------------------
 // Session state
 // -----------------------------------------------------------------
 const session = {
-  code:     null,    // their access code (or "TEST")
-  name:     null,    // their display name
-  isTest:   false,
-  predictions: null, // their predictions doc
+  code: null,
+  name: null,
+  isTest: false,
+  predictions: null,
 };
+
 const SESSION_KEY = "fwc26-login";
 const PREDICTION_LOCK_MS = 60 * 60 * 1000;
-const UK_SUMMER_OFFSET_MINUTES = 60; // World Cup 2026 runs while the UK is on BST.
+const UK_SUMMER_OFFSET_MINUTES = 60;
 
 const TEAM_CODES = Object.keys(TEAMS);
+
 const BRACKET_ROUNDS = [
-  { id: "r32",      label: "Round of 32",   pickCount: 32, scoreKey: "r32Team",   per: SCORING.r32Team   },
-  { id: "r16",      label: "Round of 16",   pickCount: 16, scoreKey: "r16Team",   per: SCORING.r16Team   },
-  { id: "qf",       label: "Quarter-finals", pickCount: 8,  scoreKey: "qfTeam",    per: SCORING.qfTeam    },
-  { id: "sf",       label: "Semi-finals",   pickCount: 4,  scoreKey: "sfTeam",    per: SCORING.sfTeam    },
-  { id: "finalists",label: "Finalists",     pickCount: 2,  scoreKey: "finalTeam", per: SCORING.finalTeam },
+  { id: "r32", label: "Round of 32", pickCount: 32, scoreKey: "r32Team", per: SCORING.r32Team },
+  { id: "r16", label: "Round of 16", pickCount: 16, scoreKey: "r16Team", per: SCORING.r16Team },
+  { id: "qf", label: "Quarter-finals", pickCount: 8, scoreKey: "qfTeam", per: SCORING.qfTeam },
+  { id: "sf", label: "Semi-finals", pickCount: 4, scoreKey: "sfTeam", per: SCORING.sfTeam },
+  { id: "finalists", label: "Finalists", pickCount: 2, scoreKey: "finalTeam", per: SCORING.finalTeam },
 ];
+
 const PLAYER_BRACKET_ROUNDS = BRACKET_ROUNDS.filter((round) => round.id !== "r32");
 
 // -----------------------------------------------------------------
 // Tiny helpers
 // -----------------------------------------------------------------
-const $  = (sel, root = document) => root.querySelector(sel);
+const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 function show(viewId) {
@@ -55,14 +59,15 @@ function show(viewId) {
 }
 
 function flagUrl(iso, size = "w40") {
-  // gb-eng / gb-sct have their own pages on flagcdn
   return `https://flagcdn.com/${size}/${iso}.png`;
 }
 
 function teamChip(code, opts = {}) {
   const t = TEAMS[code];
   if (!t) return code;
+
   const cls = opts.class || "";
+
   return `
     <span class="match-row__team match-row__team--${opts.side || "home"} ${cls}">
       <img class="team-flag" src="${flagUrl(t.iso)}" alt="${t.name}" loading="lazy" />
@@ -72,12 +77,17 @@ function teamChip(code, opts = {}) {
 
 function formatDate(iso) {
   const d = new Date(iso + "T00:00:00Z");
-  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+  return d.toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
 }
 
 function ukKickoffTimestamp(match) {
   const [year, month, day] = match.date.split("-").map(Number);
   const [hour, minute] = match.time.split(":").map(Number);
+
   return Date.UTC(year, month - 1, day, hour, minute) - (UK_SUMMER_OFFSET_MINUTES * 60 * 1000);
 }
 
@@ -104,9 +114,9 @@ function isBracketPredictionLocked() {
   return firstR32 && Date.now() >= (firstR32.getTime() - PREDICTION_LOCK_MS);
 }
 
-// Debounced save helper
 function debounce(fn, ms = 600) {
   let t;
+
   return (...args) => {
     clearTimeout(t);
     t = setTimeout(() => fn(...args), ms);
@@ -176,13 +186,18 @@ function showLoadingMessage(text = "Loading") {
 function hideLoading() {
   const loading = $("#loading");
   if (!loading) return;
+
   loading.classList.add("is-fading");
   setTimeout(() => loading.remove(), 400);
 }
 
 function rememberLogin() {
   if (!session.code || !session.name || session.isTest) return;
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ code: session.code, name: session.name }));
+
+  localStorage.setItem(SESSION_KEY, JSON.stringify({
+    code: session.code,
+    name: session.name,
+  }));
 }
 
 function forgetLogin() {
@@ -191,15 +206,18 @@ function forgetLogin() {
 
 async function restoreLogin() {
   let saved;
+
   try {
     saved = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
   } catch {
     forgetLogin();
     return false;
   }
+
   if (!saved?.code) return false;
 
   const codeDoc = await fetchCodeDoc(saved.code);
+
   if (!codeDoc) {
     forgetLogin();
     return false;
@@ -209,6 +227,7 @@ async function restoreLogin() {
   session.name = codeDoc.name || saved.name || "Player";
   session.isTest = false;
   session.predictions = (await fetchPredictions(saved.code)) || { groups: {}, bracket: {} };
+
   await launchApp();
   return true;
 }
@@ -222,7 +241,11 @@ async function fetchCodeDoc(code) {
 }
 
 async function claimCode(code, name) {
-  await update(ref(db, `codes/${code}`), { claimed: true, name, claimedAt: serverTimestamp() });
+  await update(ref(db, `codes/${code}`), {
+    claimed: true,
+    name,
+    claimedAt: serverTimestamp(),
+  });
 }
 
 async function fetchPredictions(code) {
@@ -231,33 +254,54 @@ async function fetchPredictions(code) {
 }
 
 async function savePredictions(code, payload) {
-  await update(ref(db, `predictions/${code}`), { ...payload, updatedAt: serverTimestamp() });
+  await update(ref(db, `predictions/${code}`), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 async function fetchResults() {
   const snap = await get(ref(db, "results/global"));
-  return snap.exists() ? snap.val() : { groups: {}, bracket: {}, champion: null, third: null };
+  return snap.exists() ? snap.val() : {
+    groups: {},
+    bracket: {},
+    champion: null,
+    third: null,
+  };
 }
 
 async function saveResults(payload) {
-  await update(ref(db, "results/global"), { ...payload, updatedAt: serverTimestamp() });
+  await update(ref(db, "results/global"), {
+    ...payload,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 async function fetchAllPredictions() {
   const snap = await get(ref(db, "predictions"));
   const out = [];
+
   snap.forEach((d) => {
-    out.push({ code: d.key, ...d.val() });
+    out.push({
+      code: d.key,
+      ...d.val(),
+    });
   });
+
   return out;
 }
 
 async function fetchAllCodes() {
   const snap = await get(ref(db, "codes"));
   const out = [];
+
   snap.forEach((d) => {
-    out.push({ code: d.key, ...d.val() });
+    out.push({
+      code: d.key,
+      ...d.val(),
+    });
   });
+
   return out;
 }
 
@@ -269,10 +313,14 @@ function showLoginError(msg) {
   el.textContent = msg;
   el.hidden = false;
 }
-function clearLoginError() { $("#login-error").hidden = true; }
+
+function clearLoginError() {
+  $("#login-error").hidden = true;
+}
 
 function prepareLoginForm() {
   const nameInput = $("#login-name");
+
   if (nameInput) {
     nameInput.required = false;
     nameInput.removeAttribute("required");
@@ -280,29 +328,39 @@ function prepareLoginForm() {
   }
 
   const notes = $$(".login-card .login-sub");
-  if (notes[0]) notes[0].textContent = "Enter your access code to open your predictions. Add your name only the first time you use a new code.";
-  if (notes[1]) notes[1].textContent = "Already used your code? You can leave the name box blank.";
+
+  if (notes[0]) {
+    notes[0].textContent = "Enter your access code to open your predictions. Add your name only the first time you use a new code.";
+  }
+
+  if (notes[1]) {
+    notes[1].textContent = "Already used your code? You can leave the name box blank.";
+  }
 }
 
 async function attemptLogin(rawCode, rawName) {
   clearLoginError();
+
   const code = rawCode.trim().toUpperCase();
   const name = rawName.trim();
-  if (!code) { showLoginError("Please enter your access code."); return; }
 
-  // Secret test login
+  if (!code) {
+    showLoginError("Please enter your access code.");
+    return;
+  }
+
   if (code === "TEST") {
-    session.code   = "TEST";
-    session.name   = name || "Test player";
+    session.code = "TEST";
+    session.name = name || "Test player";
     session.isTest = true;
-    // Initialise / ensure an in-memory predictions object for the tester
     session.predictions = (await fetchPredictions("TEST")) || { groups: {}, bracket: {} };
+
     await launchApp();
     return;
   }
 
-  // Verify the code exists in the database
   let codeDoc;
+
   try {
     codeDoc = await fetchCodeDoc(code);
   } catch (e) {
@@ -310,31 +368,39 @@ async function attemptLogin(rawCode, rawName) {
     console.error(e);
     return;
   }
+
   if (!codeDoc) {
     showLoginError("That code doesn't look right. Double-check the letters / numbers.");
     return;
   }
 
-  // Claim if first time
   if (!codeDoc.claimed) {
     if (!name) {
       showLoginError("Please enter your name the first time you use a new code.");
       return;
     }
-    try { await claimCode(code, name); }
-    catch (e) { showLoginError("Couldn't claim that code. Try again."); console.error(e); return; }
+
+    try {
+      await claimCode(code, name);
+    } catch (e) {
+      showLoginError("Couldn't claim that code. Try again.");
+      console.error(e);
+      return;
+    }
   }
 
-  session.code   = code;
-  session.name   = codeDoc.claimed ? (codeDoc.name || name || "Player") : name;
+  session.code = code;
+  session.name = codeDoc.claimed ? (codeDoc.name || name || "Player") : name;
   session.isTest = false;
   session.predictions = (await fetchPredictions(code)) || { groups: {}, bracket: {} };
+
   rememberLogin();
   await launchApp();
 }
 
 async function launchApp() {
   $("#user-name-display").textContent = session.name + (session.isTest ? " ★" : "");
+
   show("view-predictions");
   renderGroupsTab();
   await renderBracketTab();
@@ -348,8 +414,10 @@ async function launchApp() {
 function renderGroupsTab() {
   const root = $("#groups-container");
   const groupKeys = Object.keys(GROUPS);
+
   root.innerHTML = groupKeys.map((g) => {
     const matches = GROUP_MATCHES.filter((m) => m.group === g);
+
     return `
       <div class="group-card">
         <div class="group-card__header">
@@ -362,15 +430,13 @@ function renderGroupsTab() {
       </div>`;
   }).join("");
 
-  // Wire up inputs
   $$(".match-row", root).forEach(wireMatchRow);
-
   updateGroupsProgress();
 }
 
 function renderMatchRow(m) {
   const pred = (session.predictions.groups || {})[m.id] || {};
-  const winner = pred.winner; // "HOME" | "DRAW" | "AWAY"
+  const winner = pred.winner;
   const sh = pred.scoreHome ?? "";
   const sa = pred.scoreAway ?? "";
   const locked = isMatchLocked(m);
@@ -401,6 +467,7 @@ function renderMatchRow(m) {
 
 function wireMatchRow(row) {
   if (row.dataset.locked === "true") return;
+
   const id = Number(row.dataset.matchId);
   const match = groupMatchById(id);
   const debouncedSave = debounce(() => persistGroupPrediction(id), 400);
@@ -412,12 +479,19 @@ function wireMatchRow(row) {
         renderGroupsTab();
         return;
       }
+
       $$(".outcome-btn", row).forEach((b) => b.classList.remove("is-selected"));
       btn.classList.add("is-selected");
-      // Sync into session
+
       session.predictions.groups = session.predictions.groups || {};
+
       const pick = btn.dataset.pick.toUpperCase();
-      session.predictions.groups[id] = { ...(session.predictions.groups[id] || {}), winner: pick };
+
+      session.predictions.groups[id] = {
+        ...(session.predictions.groups[id] || {}),
+        winner: pick,
+      };
+
       debouncedSave();
       updateGroupsProgress();
     });
@@ -430,19 +504,33 @@ function wireMatchRow(row) {
         renderGroupsTab();
         return;
       }
-      const side  = input.dataset.side === "home" ? "scoreHome" : "scoreAway";
-      const value = input.value === "" ? null : Math.max(0, Math.min(20, parseInt(input.value, 10) || 0));
-      session.predictions.groups = session.predictions.groups || {};
-      session.predictions.groups[id] = { ...(session.predictions.groups[id] || {}), [side]: value };
 
-      // Auto-infer outcome from score if both filled
+      const side = input.dataset.side === "home" ? "scoreHome" : "scoreAway";
+      const value = input.value === "" ? null : Math.max(0, Math.min(20, parseInt(input.value, 10) || 0));
+
+      session.predictions.groups = session.predictions.groups || {};
+
+      session.predictions.groups[id] = {
+        ...(session.predictions.groups[id] || {}),
+        [side]: value,
+      };
+
       const p = session.predictions.groups[id];
+
       if (typeof p.scoreHome === "number" && typeof p.scoreAway === "number") {
-        const inferred = p.scoreHome > p.scoreAway ? "HOME"
-                        : p.scoreHome < p.scoreAway ? "AWAY" : "DRAW";
+        const inferred = p.scoreHome > p.scoreAway
+          ? "HOME"
+          : p.scoreHome < p.scoreAway
+            ? "AWAY"
+            : "DRAW";
+
         p.winner = inferred;
-        $$(".outcome-btn", row).forEach((b) => b.classList.toggle("is-selected", b.dataset.pick.toUpperCase() === inferred));
+
+        $$(".outcome-btn", row).forEach((b) => {
+          b.classList.toggle("is-selected", b.dataset.pick.toUpperCase() === inferred);
+        });
       }
+
       debouncedSave();
       updateGroupsProgress();
     });
@@ -451,6 +539,7 @@ function wireMatchRow(row) {
 
 async function persistGroupPrediction(id) {
   const match = groupMatchById(id);
+
   if (match && isMatchLocked(match)) {
     $("#groups-save-status").textContent = "Locked 1 hour before UK kick-off";
     renderGroupsTab();
@@ -458,9 +547,16 @@ async function persistGroupPrediction(id) {
   }
 
   setSaveStatus("groups", true);
+
   try {
-    await savePredictions(session.code, { name: session.name, groups: session.predictions.groups });
-  } catch (e) { console.error(e); }
+    await savePredictions(session.code, {
+      name: session.name,
+      groups: session.predictions.groups,
+    });
+  } catch (e) {
+    console.error(e);
+  }
+
   setSaveStatus("groups", false);
   updateUserScoreDisplay();
 }
@@ -469,12 +565,14 @@ function updateGroupsProgress() {
   const total = GROUP_MATCHES.length;
   const groups = session.predictions.groups || {};
   const done = Object.values(groups).filter((p) => p.winner).length;
+
   $("#groups-progress").textContent = `${done} / ${total} predicted`;
 }
 
 function setSaveStatus(scope, saving) {
   const el = $(`#${scope}-save-status`);
   if (!el) return;
+
   el.textContent = saving ? "Saving…" : "Saved";
   el.classList.toggle("is-saving", saving);
 }
@@ -500,21 +598,32 @@ async function renderBracketTab() {
           The bracket will open after admin confirms the 32 teams that reach the knockout stage.
         </p>
       </div>`;
+
     $("#bracket-save-status").textContent = "Locked until admin confirms the Round of 32";
     return;
   }
 
-  $("#bracket-save-status").textContent = bracketLocked ? "Locked 1 hour before first Round of 32 UK kick-off" : "Saved automatically";
+  $("#bracket-save-status").textContent = bracketLocked
+    ? "Locked 1 hour before first Round of 32 UK kick-off"
+    : "Saved automatically";
+
   root.dataset.locked = bracketLocked ? "true" : "false";
-  const sections = PLAYER_BRACKET_ROUNDS.map((r) => bracketSection(r, asList(b[r.id]), knockoutTeams, bracketLocked)).join("");
+
+  const sections = PLAYER_BRACKET_ROUNDS
+    .map((r) => bracketSection(r, asList(b[r.id]), knockoutTeams, bracketLocked))
+    .join("");
+
   const finals = bracketFinals(b, knockoutTeams, bracketLocked);
+
   root.innerHTML = sections + finals;
+
   if (!bracketLocked) wireBracket(root);
 }
 
 function bracketSection(round, picks, teamCodes = TEAM_CODES, locked = false) {
   const lockedClass = locked ? "is-locked" : "";
   const disabled = locked ? "disabled" : "";
+
   return `
     <div class="bracket-section" data-round="${round.id}">
       <div class="bracket-section__head">
@@ -525,6 +634,7 @@ function bracketSection(round, picks, teamCodes = TEAM_CODES, locked = false) {
         ${teamCodes.map((code) => {
           const sel = picks.includes(code) ? "is-selected" : "";
           const t = TEAMS[code];
+
           return `
             <button class="team-chip ${sel} ${lockedClass}" type="button" data-team="${code}" ${disabled}>
               <img class="team-flag" src="${flagUrl(t.iso)}" alt="" loading="lazy" />
@@ -540,8 +650,11 @@ function bracketSection(round, picks, teamCodes = TEAM_CODES, locked = false) {
 
 function bracketFinals(b, teamCodes = TEAM_CODES, locked = false) {
   const disabled = locked ? "disabled" : "";
-  const opts = (selected) => teamCodes.map((c) =>
-    `<option value="${c}" ${selected === c ? "selected" : ""}>${TEAMS[c].name} (${c})</option>`).join("");
+
+  const opts = (selected) => teamCodes.map((c) => `
+    <option value="${c}" ${selected === c ? "selected" : ""}>${TEAMS[c].name} (${c})</option>
+  `).join("");
+
   return `
     <div class="bracket-section">
       <div class="bracket-section__head">
@@ -566,7 +679,6 @@ function bracketFinals(b, teamCodes = TEAM_CODES, locked = false) {
 }
 
 function wireBracket(root) {
-  // Section pickers
   $$(".bracket-section[data-round]", root).forEach((section) => {
     const roundId = section.dataset.round;
     const round = BRACKET_ROUNDS.find((r) => r.id === roundId);
@@ -578,44 +690,60 @@ function wireBracket(root) {
           renderBracketTab();
           return;
         }
+
         const team = chip.dataset.team;
+
         session.predictions.bracket = session.predictions.bracket || {};
+
         const picks = new Set(asList(session.predictions.bracket[roundId]));
-        if (picks.has(team)) picks.delete(team);
-        else {
-          if (picks.size >= round.pickCount) return; // full
+
+        if (picks.has(team)) {
+          picks.delete(team);
+        } else {
+          if (picks.size >= round.pickCount) return;
           picks.add(team);
         }
+
         session.predictions.bracket[roundId] = [...picks];
+
         chip.classList.toggle("is-selected");
+
         const n = picks.size;
+
         status.innerHTML = `Picked <strong>${n} / ${round.pickCount}</strong>`;
         status.classList.toggle("is-full", n === round.pickCount);
+
         bracketSaveDebounced();
       });
     });
   });
 
-  // Champion / 3rd
   const b = session.predictions.bracket || {};
+
   if (b.champion) $("#final-champion").value = b.champion;
-  if (b.third)    $("#final-third").value    = b.third;
+  if (b.third) $("#final-third").value = b.third;
+
   $("#final-champion").addEventListener("change", (e) => {
     if (isBracketPredictionLocked()) {
       renderBracketTab();
       return;
     }
+
     session.predictions.bracket = session.predictions.bracket || {};
     session.predictions.bracket.champion = e.target.value || null;
+
     bracketSaveDebounced();
   });
+
   $("#final-third").addEventListener("change", (e) => {
     if (isBracketPredictionLocked()) {
       renderBracketTab();
       return;
     }
+
     session.predictions.bracket = session.predictions.bracket || {};
     session.predictions.bracket.third = e.target.value || null;
+
     bracketSaveDebounced();
   });
 }
@@ -628,8 +756,16 @@ const bracketSaveDebounced = debounce(async () => {
   }
 
   setSaveStatus("bracket", true);
-  try { await savePredictions(session.code, { name: session.name, bracket: session.predictions.bracket }); }
-  catch (e) { console.error(e); }
+
+  try {
+    await savePredictions(session.code, {
+      name: session.name,
+      bracket: session.predictions.bracket,
+    });
+  } catch (e) {
+    console.error(e);
+  }
+
   setSaveStatus("bracket", false);
   updateUserScoreDisplay();
 }, 600);
@@ -637,86 +773,192 @@ const bracketSaveDebounced = debounce(async () => {
 // -----------------------------------------------------------------
 // SCORING
 // -----------------------------------------------------------------
-function scoreOnePerson(p, results) {
-  let total = 0, correct = 0;
+const GROUP_OUTCOME_POINTS = 6;
+const GROUP_ONE_SCORE_POINTS = 7;
+const GROUP_EXACT_SCORE_POINTS = 14;
 
-  // Group stage
+function toScoreNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return null;
+}
+
+function inferWinnerFromScores(homeScore, awayScore) {
+  if (homeScore === null || awayScore === null) return null;
+  if (homeScore > awayScore) return "HOME";
+  if (homeScore < awayScore) return "AWAY";
+  return "DRAW";
+}
+
+function scoreOnePerson(p, results) {
+  let total = 0;
+  let correct = 0;
+
   const gp = p.groups || {};
   const gr = results.groups || {};
+
   for (const [id, pred] of Object.entries(gp)) {
     const r = gr[id];
-    if (!r || !r.winner) continue;
-    if (pred.winner && pred.winner === r.winner) {
-      total += SCORING.groupOutcome;
+
+    if (!r || !pred) continue;
+
+    const predHome = toScoreNumber(pred.scoreHome);
+    const predAway = toScoreNumber(pred.scoreAway);
+    const realHome = toScoreNumber(r.scoreHome);
+    const realAway = toScoreNumber(r.scoreAway);
+
+    const hasPredictedScore = predHome !== null && predAway !== null;
+    const hasRealScore = realHome !== null && realAway !== null;
+
+    const predictedWinner = pred.winner || inferWinnerFromScores(predHome, predAway);
+    const realWinner = r.winner || inferWinnerFromScores(realHome, realAway);
+
+    if (!realWinner && !hasRealScore) continue;
+
+    const exactScore =
+      hasPredictedScore &&
+      hasRealScore &&
+      predHome === realHome &&
+      predAway === realAway;
+
+    const oneTeamScoreCorrect =
+      hasPredictedScore &&
+      hasRealScore &&
+      !exactScore &&
+      (predHome === realHome || predAway === realAway);
+
+    const correctOutcome =
+      predictedWinner &&
+      realWinner &&
+      predictedWinner === realWinner;
+
+    let matchPoints = 0;
+
+    if (exactScore) {
+      matchPoints = GROUP_EXACT_SCORE_POINTS;
+    } else if (oneTeamScoreCorrect) {
+      matchPoints = GROUP_ONE_SCORE_POINTS;
+    } else if (correctOutcome) {
+      matchPoints = GROUP_OUTCOME_POINTS;
+    }
+
+    if (matchPoints > 0) {
+      total += matchPoints;
       correct += 1;
-      if (
-        typeof pred.scoreHome === "number" && typeof pred.scoreAway === "number" &&
-        typeof r.scoreHome === "number"     && typeof r.scoreAway === "number" &&
-        pred.scoreHome === r.scoreHome && pred.scoreAway === r.scoreAway
-      ) {
-        total += SCORING.groupExactBonus;
-        correct += 1;
-      }
     }
   }
 
-  // Bracket
   const bp = p.bracket || {};
   const br = results.bracket || {};
+
   for (const round of PLAYER_BRACKET_ROUNDS) {
-    const picks   = asList(bp[round.id]);
-    const actual  = asList(br[round.id]);
+    const picks = asList(bp[round.id]);
+    const actual = asList(br[round.id]);
+
     if (!actual.length) continue;
+
     const hits = picks.filter((t) => actual.includes(t)).length;
-    total   += hits * round.per;
+
+    total += hits * round.per;
     correct += hits;
   }
 
-  // Trophy picks
-  if (results.champion && bp.champion === results.champion) { total += SCORING.champion; correct += 1; }
-  if (results.third    && bp.third    === results.third)    { total += SCORING.third;    correct += 1; }
+  if (results.champion && bp.champion === results.champion) {
+    total += SCORING.champion;
+    correct += 1;
+  }
 
-  return { total, correct };
+  if (results.third && bp.third === results.third) {
+    total += SCORING.third;
+    correct += 1;
+  }
+
+  return {
+    total,
+    correct,
+  };
 }
 
 async function computeLeaderboard() {
-  const [preds, results] = await Promise.all([fetchAllPredictions(), fetchResults()]);
+  const [preds, results] = await Promise.all([
+    fetchAllPredictions(),
+    fetchResults(),
+  ]);
+
   const rows = preds
-    .filter((p) => p.code !== "TEST") // hide the test row from the standard table; we'll add it back if relevant
-    .map((p) => ({ code: p.code, name: p.name || "—", ...scoreOnePerson(p, results) }));
+    .filter((p) => p.code !== "TEST")
+    .map((p) => ({
+      code: p.code,
+      name: p.name || "—",
+      ...scoreOnePerson(p, results),
+    }));
 
   rows.sort((a, b) => b.total - a.total || b.correct - a.correct);
+
   return rows;
 }
 
 async function renderLeaderboardTab() {
   const root = $("#leaderboard-container");
-  root.innerHTML = `<div class="leaderboard-row leaderboard-row--head">
-    <div class="lb-rank">#</div><div>Player</div>
-    <div class="lb-correct">Correct</div><div class="lb-pts">Points</div>
-  </div><div class="leaderboard-row"><div></div><div>Loading…</div><div></div><div></div></div>`;
+
+  root.innerHTML = `
+    <div class="leaderboard-row leaderboard-row--head">
+      <div class="lb-rank">#</div>
+      <div>Player</div>
+      <div class="lb-correct">Correct</div>
+      <div class="lb-pts">Points</div>
+    </div>
+    <div class="leaderboard-row">
+      <div></div>
+      <div>Loading…</div>
+      <div></div>
+      <div></div>
+    </div>`;
 
   const rows = await computeLeaderboard();
-  const meRow = rows.find((r) => r.code === session.code);
 
-  // Test user gets shown at top if they're the viewer
   let bodyHtml = "";
+
   if (session.isTest) {
     const topScore = rows.length ? rows[0].total : 0;
-    bodyHtml += renderLeaderboardRow({ code: "TEST", name: session.name + " ★", correct: 999, total: topScore + 1000 }, 1, true);
+
+    bodyHtml += renderLeaderboardRow({
+      code: "TEST",
+      name: session.name + " ★",
+      correct: 999,
+      total: topScore + 1000,
+    }, 1, true);
   }
+
   rows.forEach((r, i) => {
-    bodyHtml += renderLeaderboardRow(r, session.isTest ? i + 2 : i + 1, r.code === session.code && !session.isTest);
+    bodyHtml += renderLeaderboardRow(
+      r,
+      session.isTest ? i + 2 : i + 1,
+      r.code === session.code && !session.isTest,
+    );
   });
 
   if (!rows.length && !session.isTest) {
-    bodyHtml = `<div class="leaderboard-row"><div></div><div style="opacity:.6">No predictions yet.</div><div></div><div></div></div>`;
+    bodyHtml = `
+      <div class="leaderboard-row">
+        <div></div>
+        <div style="opacity:.6">No predictions yet.</div>
+        <div></div>
+        <div></div>
+      </div>`;
   }
 
   root.innerHTML = `
     <div class="leaderboard-row leaderboard-row--head">
-      <div class="lb-rank">#</div><div>Player</div>
-      <div class="lb-correct">Correct</div><div class="lb-pts">Points</div>
+      <div class="lb-rank">#</div>
+      <div>Player</div>
+      <div class="lb-correct">Correct</div>
+      <div class="lb-pts">Points</div>
     </div>
     ${bodyHtml}`;
 }
@@ -736,14 +978,20 @@ async function updateUserScoreDisplay() {
     $("#user-score-display").textContent = "∞ pts ★";
     return;
   }
+
   const results = await fetchResults();
   const { total } = scoreOnePerson(session.predictions, results);
+
   $("#user-score-display").textContent = `${total} pts`;
 }
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
   })[c]);
 }
 
@@ -752,6 +1000,7 @@ function escapeHtml(s) {
 // -----------------------------------------------------------------
 function gotoAdmin() {
   show("view-admin");
+
   $("#admin-gate").classList.remove("hidden");
   $("#admin-tools").classList.add("hidden");
   $("#admin-pw").value = "";
@@ -761,6 +1010,7 @@ function gotoAdmin() {
 function unlockAdmin() {
   $("#admin-gate").classList.add("hidden");
   $("#admin-tools").classList.remove("hidden");
+
   renderAdminLeaderboard();
   renderAdminResults();
   renderAdminCodes();
@@ -768,17 +1018,23 @@ function unlockAdmin() {
 
 async function renderAdminLeaderboard() {
   const root = $("#admin-leaderboard");
+
   root.innerHTML = `<div style="opacity:.6">Loading…</div>`;
+
   const rows = await computeLeaderboard();
+
   if (!rows.length) {
     root.innerHTML = `<div style="opacity:.6">No predictions submitted yet.</div>`;
     return;
   }
+
   root.innerHTML = `
     <div class="leaderboard">
       <div class="leaderboard-row leaderboard-row--head">
-        <div class="lb-rank">#</div><div>Player</div>
-        <div class="lb-correct">Correct</div><div class="lb-pts">Points</div>
+        <div class="lb-rank">#</div>
+        <div>Player</div>
+        <div class="lb-correct">Correct</div>
+        <div class="lb-pts">Points</div>
       </div>
       ${rows.map((r, i) => renderLeaderboardRow(r, i + 1, false)).join("")}
     </div>`;
@@ -786,7 +1042,9 @@ async function renderAdminLeaderboard() {
 
 function ensureAdminPredictionGraphStyles() {
   if ($("#admin-prediction-graph-style")) return;
+
   const style = document.createElement("style");
+
   style.id = "admin-prediction-graph-style";
   style.textContent = `
     .admin-prediction-graph {
@@ -899,6 +1157,7 @@ function ensureAdminPredictionGraphStyles() {
       .prediction-graph-names { grid-column: 1 / -1; }
     }
   `;
+
   document.head.appendChild(style);
 }
 
@@ -906,25 +1165,36 @@ function predictionScoreLabel(pred) {
   if (typeof pred.scoreHome === "number" && typeof pred.scoreAway === "number") {
     return ` (${pred.scoreHome}-${pred.scoreAway})`;
   }
+
   return "";
 }
 
 function buildGroupPredictionStats(predictions) {
   const players = predictions.filter((p) => p.code !== "TEST");
   const stats = {};
+
   GROUP_MATCHES.forEach((match) => {
-    stats[match.id] = { total: players.length, HOME: [], DRAW: [], AWAY: [], missing: 0 };
+    stats[match.id] = {
+      total: players.length,
+      HOME: [],
+      DRAW: [],
+      AWAY: [],
+      missing: 0,
+    };
   });
 
   players.forEach((player) => {
     const groups = player.groups || {};
+
     GROUP_MATCHES.forEach((match) => {
       const pred = groups[match.id];
       const bucket = stats[match.id];
+
       if (!pred || !["HOME", "DRAW", "AWAY"].includes(pred.winner)) {
         bucket.missing += 1;
         return;
       }
+
       bucket[pred.winner].push({
         name: player.name || player.code || "Player",
         score: predictionScoreLabel(pred),
@@ -937,6 +1207,7 @@ function buildGroupPredictionStats(predictions) {
 
 function renderPredictionNameList(items) {
   if (!items.length) return `<span style="opacity:.55">None</span>`;
+
   return items
     .map((item) => `<span>${escapeHtml(item.name)}${escapeHtml(item.score)}</span>`)
     .join(", ");
@@ -963,6 +1234,7 @@ function renderAdminPredictionGraph(match, stats) {
       ${choices.map((choice) => {
         const items = stats[choice.key] || [];
         const percent = Math.round((items.length / stats.total) * 100);
+
         return `
           <div class="prediction-graph-row">
             <div class="prediction-graph-label">${choice.label}</div>
@@ -998,39 +1270,54 @@ function renderAdminGraphCard(match, stats) {
 function ensureAdminGraphsTab() {
   const tabs = $(".app-tabs--admin");
   const tools = $("#admin-tools");
+
   if (!tabs || !tools || $('[data-admin-tab="graphs"]', tabs)) return;
 
   const btn = document.createElement("button");
+
   btn.className = "app-tab";
   btn.type = "button";
   btn.dataset.adminTab = "graphs";
   btn.textContent = "Prediction graphs";
+
   const setupTab = $('[data-admin-tab="setup"]', tabs);
+
   tabs.insertBefore(btn, setupTab || null);
 
   const panel = document.createElement("div");
+
   panel.className = "admin-panel hidden";
   panel.id = "admin-tab-graphs";
   panel.innerHTML = `
     <h3 class="panel-title">Prediction graphs</h3>
     <p class="panel-sub">Read-only view of what players have predicted for each group game.</p>
     <div id="admin-graphs"></div>`;
+
   const resultsPanel = $("#admin-tab-results");
-  if (resultsPanel?.parentNode) resultsPanel.parentNode.insertBefore(panel, resultsPanel.nextSibling);
-  else tools.appendChild(panel);
+
+  if (resultsPanel?.parentNode) {
+    resultsPanel.parentNode.insertBefore(panel, resultsPanel.nextSibling);
+  } else {
+    tools.appendChild(panel);
+  }
 }
 
 async function renderAdminGraphs() {
   ensureAdminPredictionGraphStyles();
+
   const root = $("#admin-graphs");
+
   if (!root) return;
+
   root.innerHTML = `<div style="opacity:.6">Loading…</div>`;
+
   const predictions = await fetchAllPredictions();
   const predictionStats = buildGroupPredictionStats(predictions);
   const groupKeys = Object.keys(GROUPS);
 
   root.innerHTML = groupKeys.map((group) => {
     const matches = GROUP_MATCHES.filter((m) => m.group === group);
+
     return `
       <section class="admin-graphs-group">
         <h4 class="admin-graphs-group__title">Group ${group}</h4>
@@ -1044,16 +1331,19 @@ async function renderAdminGraphs() {
 async function renderAdminResults() {
   const root = $("#admin-results");
   const results = await fetchResults();
-  results.groups  = results.groups  || {};
+
+  results.groups = results.groups || {};
   results.bracket = results.bracket || {};
 
   const groupRows = GROUP_MATCHES.map((m) => {
     const r = results.groups[m.id] || {};
     const sh = r.scoreHome ?? "";
     const sa = r.scoreAway ?? "";
-    const w  = r.winner || "";
-    const btn = (val, lab) =>
-      `<button type="button" class="outcome-btn ${w === val ? "is-selected" : ""}" data-result-pick="${val}" data-match="${m.id}">${lab}</button>`;
+    const w = r.winner || "";
+
+    const btn = (val, lab) => `
+      <button type="button" class="outcome-btn ${w === val ? "is-selected" : ""}" data-result-pick="${val}" data-match="${m.id}">${lab}</button>`;
+
     return `
       <div class="result-row" data-result-match="${m.id}">
         <div class="result-row__num">${m.id}</div>
@@ -1075,6 +1365,7 @@ async function renderAdminResults() {
 
   const bracketRows = BRACKET_ROUNDS.map((round) => {
     const picks = asList(results.bracket[round.id]);
+
     return `
       <div class="bracket-section" data-result-round="${round.id}" style="margin-top:24px">
         <div class="bracket-section__head">
@@ -1084,17 +1375,21 @@ async function renderAdminResults() {
         <div class="team-picker">
           ${TEAM_CODES.map((c) => {
             const sel = picks.includes(c) ? "is-selected" : "";
-            return `<button class="team-chip ${sel}" type="button" data-result-team="${c}" data-result-round-chip="${round.id}">
-              <img class="team-flag" src="${flagUrl(TEAMS[c].iso)}" alt="" />
-              <span class="team-chip__name">${TEAMS[c].name}</span>
-            </button>`;
+
+            return `
+              <button class="team-chip ${sel}" type="button" data-result-team="${c}" data-result-round-chip="${round.id}">
+                <img class="team-flag" src="${flagUrl(TEAMS[c].iso)}" alt="" />
+                <span class="team-chip__name">${TEAMS[c].name}</span>
+              </button>`;
           }).join("")}
         </div>
         <div class="picker-status">Picked <strong data-result-count="${round.id}">${picks.length} / ${round.pickCount}</strong></div>
       </div>`;
   }).join("");
 
-  const trophyOpts = TEAM_CODES.map((c) => `<option value="${c}">${TEAMS[c].name} (${c})</option>`).join("");
+  const trophyOpts = TEAM_CODES
+    .map((c) => `<option value="${c}">${TEAMS[c].name} (${c})</option>`)
+    .join("");
 
   root.innerHTML = `
     <h4 style="font-family:var(--font-mono);font-size:11px;letter-spacing:.2em;color:var(--ink-mute);margin:24px 0 8px;text-transform:uppercase">Group stage results</h4>
@@ -1122,16 +1417,36 @@ async function renderAdminResults() {
     </div>`;
 
   if (results.champion) $("#result-champion").value = results.champion;
-  if (results.third)    $("#result-third").value    = results.third;
+  if (results.third) $("#result-third").value = results.third;
 
-  // Wire group result inputs
-  const adminResultsDirty = { groups: {}, bracket: {}, champion: undefined, third: undefined };
+  const adminResultsDirty = {
+    groups: {},
+    bracket: {},
+    champion: undefined,
+    third: undefined,
+  };
+
   const saveAdminDebounced = debounce(async () => {
     const merged = await fetchResults();
-    merged.groups  = { ...(merged.groups  || {}), ...adminResultsDirty.groups };
-    merged.bracket = { ...(merged.bracket || {}), ...adminResultsDirty.bracket };
-    if (adminResultsDirty.champion !== undefined) merged.champion = adminResultsDirty.champion;
-    if (adminResultsDirty.third    !== undefined) merged.third    = adminResultsDirty.third;
+
+    merged.groups = {
+      ...(merged.groups || {}),
+      ...adminResultsDirty.groups,
+    };
+
+    merged.bracket = {
+      ...(merged.bracket || {}),
+      ...adminResultsDirty.bracket,
+    };
+
+    if (adminResultsDirty.champion !== undefined) {
+      merged.champion = adminResultsDirty.champion;
+    }
+
+    if (adminResultsDirty.third !== undefined) {
+      merged.third = adminResultsDirty.third;
+    }
+
     await saveResults(merged);
     renderAdminLeaderboard();
   }, 600);
@@ -1139,47 +1454,80 @@ async function renderAdminResults() {
   $$(".result-row .outcome-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const mid = btn.dataset.match;
-      $$(`.result-row[data-result-match="${mid}"] .outcome-btn`).forEach((b) => b.classList.remove("is-selected"));
+
+      $$(`.result-row[data-result-match="${mid}"] .outcome-btn`).forEach((b) => {
+        b.classList.remove("is-selected");
+      });
+
       btn.classList.add("is-selected");
-      adminResultsDirty.groups[mid] = { ...(adminResultsDirty.groups[mid] || results.groups[mid] || {}), winner: btn.dataset.resultPick };
+
+      adminResultsDirty.groups[mid] = {
+        ...(adminResultsDirty.groups[mid] || results.groups[mid] || {}),
+        winner: btn.dataset.resultPick,
+      };
+
       saveAdminDebounced();
     });
   });
+
   $$(".result-row .score-input").forEach((input) => {
     input.addEventListener("input", () => {
       const mid = input.dataset.match;
       const side = input.dataset.resultSide === "home" ? "scoreHome" : "scoreAway";
       const val = input.value === "" ? null : parseInt(input.value, 10) || 0;
-      adminResultsDirty.groups[mid] = { ...(adminResultsDirty.groups[mid] || results.groups[mid] || {}), [side]: val };
-      // Infer outcome if both filled
+
+      adminResultsDirty.groups[mid] = {
+        ...(adminResultsDirty.groups[mid] || results.groups[mid] || {}),
+        [side]: val,
+      };
+
       const p = adminResultsDirty.groups[mid];
+
       if (typeof p.scoreHome === "number" && typeof p.scoreAway === "number") {
-        p.winner = p.scoreHome > p.scoreAway ? "HOME" : p.scoreHome < p.scoreAway ? "AWAY" : "DRAW";
-        $$(`.result-row[data-result-match="${mid}"] .outcome-btn`).forEach((b) => b.classList.toggle("is-selected", b.dataset.resultPick === p.winner));
+        p.winner = p.scoreHome > p.scoreAway
+          ? "HOME"
+          : p.scoreHome < p.scoreAway
+            ? "AWAY"
+            : "DRAW";
+
+        $$(`.result-row[data-result-match="${mid}"] .outcome-btn`).forEach((b) => {
+          b.classList.toggle("is-selected", b.dataset.resultPick === p.winner);
+        });
       }
+
       saveAdminDebounced();
     });
   });
 
-  // Bracket chips
   $$("[data-result-round-chip]").forEach((chip) => {
     chip.addEventListener("click", () => {
       const round = chip.dataset.resultRoundChip;
-      const team  = chip.dataset.resultTeam;
+      const team = chip.dataset.resultTeam;
       const roundObj = BRACKET_ROUNDS.find((r) => r.id === round);
+
       const source = Object.prototype.hasOwnProperty.call(adminResultsDirty.bracket, round)
         ? adminResultsDirty.bracket[round]
         : results.bracket[round];
+
       const arr = new Set(asList(source));
-      if (arr.has(team)) arr.delete(team);
-      else {
+
+      if (arr.has(team)) {
+        arr.delete(team);
+      } else {
         if (arr.size >= roundObj.pickCount) return;
         arr.add(team);
       }
+
       adminResultsDirty.bracket[round] = [...arr];
+
       chip.classList.toggle("is-selected");
+
       const cnt = $(`[data-result-count="${round}"]`);
-      if (cnt) cnt.textContent = `${arr.size} / ${roundObj.pickCount}`;
+
+      if (cnt) {
+        cnt.textContent = `${arr.size} / ${roundObj.pickCount}`;
+      }
+
       saveAdminDebounced();
     });
   });
@@ -1188,6 +1536,7 @@ async function renderAdminResults() {
     adminResultsDirty.champion = e.target.value || null;
     saveAdminDebounced();
   });
+
   $("#result-third")?.addEventListener("change", (e) => {
     adminResultsDirty.third = e.target.value || null;
     saveAdminDebounced();
@@ -1196,15 +1545,21 @@ async function renderAdminResults() {
 
 async function renderAdminCodes() {
   const root = $("#admin-codes");
+
   root.innerHTML = `<div style="opacity:.6">Loading…</div>`;
+
   const codes = await fetchAllCodes();
+
   if (!codes.length) {
     root.innerHTML = `<p style="color:var(--ink-soft)">No codes seeded yet. Use the <strong>Setup</strong> tab to create some.</p>`;
     return;
   }
+
   codes.sort((a, b) => a.code.localeCompare(b.code));
-  const claimed   = codes.filter((c) => c.claimed).length;
+
+  const claimed = codes.filter((c) => c.claimed).length;
   const unclaimed = codes.length - claimed;
+
   root.innerHTML = `
     <p style="color:var(--ink-soft)"><strong>${codes.length}</strong> codes · <strong>${claimed}</strong> claimed · <strong>${unclaimed}</strong> unclaimed.</p>
     <div class="admin-codes-grid">
@@ -1218,27 +1573,44 @@ async function renderAdminCodes() {
 
 async function seedCodes() {
   const out = $("#seed-output");
+
   out.textContent = "Generating 100 codes…\n";
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // ambiguous chars stripped
+
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   const codes = new Set();
+
   while (codes.size < 100) {
     let c = "";
-    for (let i = 0; i < 6; i++) c += chars[Math.floor(Math.random() * chars.length)];
+
+    for (let i = 0; i < 6; i++) {
+      c += chars[Math.floor(Math.random() * chars.length)];
+    }
+
     codes.add(c);
   }
+
   const list = [...codes].sort();
+
   out.textContent += "Writing to database…\n";
+
   const codeMap = {};
+
   list.forEach((code) => {
-    codeMap[code] = { claimed: false, createdAt: serverTimestamp() };
+    codeMap[code] = {
+      claimed: false,
+      createdAt: serverTimestamp(),
+    };
   });
+
   try {
     await set(ref(db, "codes"), codeMap);
+
     out.textContent += `\n✓ Seeded ${list.length} codes. Distribute these (copy and save them somewhere safe — they're shown here just this once in plain form):\n\n${list.join("\n")}\n`;
   } catch (e) {
     out.textContent += `\n✗ Failed: ${e.message}`;
     console.error(e);
   }
+
   renderAdminCodes();
 }
 
@@ -1250,9 +1622,9 @@ function init() {
   ensureAdminGraphsTab();
   localStorage.removeItem("fwc26-admin-login");
 
-  // Hide loader
   if (hasSavedLogin()) {
     showLoadingMessage("Loading");
+
     setTimeout(async () => {
       try {
         if (await restoreLogin()) {
@@ -1263,6 +1635,7 @@ function init() {
         console.error(e);
         forgetLogin();
       }
+
       show("view-login");
       hideLoading();
     }, 600);
@@ -1273,23 +1646,27 @@ function init() {
     }, 600);
   }
 
-  // Login form
   $("#login-form").addEventListener("submit", (e) => {
     e.preventDefault();
     attemptLogin($("#login-code").value, $("#login-name").value);
   });
 
-  // Sign out
   $("#btn-signout").addEventListener("click", () => {
     forgetLogin();
-    session.code = session.name = session.predictions = null;
+
+    session.code = null;
+    session.name = null;
+    session.predictions = null;
     session.isTest = false;
+
     show("view-login");
-    $("#login-code").value = ""; $("#login-name").value = "";
+
+    $("#login-code").value = "";
+    $("#login-name").value = "";
   });
 
-  // No code modal
   const modal = $("#modal-no-code");
+
   $("#btn-no-code").addEventListener("click", () => {
     const subject = encodeURIComponent("FWC26 Pool — Please send me a code");
     const body = encodeURIComponent(
@@ -1299,51 +1676,69 @@ Could I have a code for the World Cup 2026 predictions pool, please? I know it's
 
 My name: 
 
-Thanks!`
+Thanks!`,
     );
+
     $("#no-code-mailto").href = `mailto:${CONTACT_EMAIL}?subject=${subject}&body=${body}`;
     $("#no-code-email-display").textContent = CONTACT_EMAIL;
+
     modal.classList.remove("hidden");
   });
-  $$("[data-close-modal]").forEach((el) => el.addEventListener("click", () => modal.classList.add("hidden")));
 
-  // Admin
+  $$("[data-close-modal]").forEach((el) => {
+    el.addEventListener("click", () => modal.classList.add("hidden"));
+  });
+
   $("#btn-admin").addEventListener("click", gotoAdmin);
-  $("#btn-admin-back").addEventListener("click", () => show("view-login"));
+
+  $("#btn-admin-back").addEventListener("click", () => {
+    show("view-login");
+  });
+
   $("#admin-pw-form").addEventListener("submit", (e) => {
     e.preventDefault();
-    if ($("#admin-pw").value === ADMIN_PASSWORD) unlockAdmin();
-    else { $("#admin-pw-error").textContent = "Wrong password."; $("#admin-pw-error").hidden = false; }
+
+    if ($("#admin-pw").value === ADMIN_PASSWORD) {
+      unlockAdmin();
+    } else {
+      $("#admin-pw-error").textContent = "Wrong password.";
+      $("#admin-pw-error").hidden = false;
+    }
   });
+
   $("#btn-seed-codes").addEventListener("click", seedCodes);
 
-  // Tabs (predictions)
   $$("#app-tabs .app-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       $$("#app-tabs .app-tab").forEach((b) => b.classList.remove("is-active"));
       btn.classList.add("is-active");
+
       const t = btn.dataset.tab;
+
       ["groups", "bracket", "leaderboard"].forEach((key) => {
         $("#tab-" + key).classList.toggle("hidden", key !== t);
       });
+
       if (t === "bracket") renderBracketTab();
       if (t === "leaderboard") renderLeaderboardTab();
     });
   });
 
-  // Tabs (admin)
   $$(".app-tabs--admin .app-tab").forEach((btn) => {
     btn.addEventListener("click", () => {
       $$(".app-tabs--admin .app-tab").forEach((b) => b.classList.remove("is-active"));
       btn.classList.add("is-active");
+
       const t = btn.dataset.adminTab;
+
       ["leaderboard", "results", "graphs", "codes", "setup"].forEach((key) => {
         $("#admin-tab-" + key).classList.toggle("hidden", key !== t);
       });
+
       if (t === "leaderboard") renderAdminLeaderboard();
-      if (t === "results")     renderAdminResults();
-      if (t === "graphs")      renderAdminGraphs();
-      if (t === "codes")       renderAdminCodes();
+      if (t === "results") renderAdminResults();
+      if (t === "graphs") renderAdminGraphs();
+      if (t === "codes") renderAdminCodes();
     });
   });
 }
