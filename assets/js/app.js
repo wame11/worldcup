@@ -100,7 +100,7 @@ function predictionLockTimestamp(match) {
 }
 
 function isMatchLocked(match) {
-  return Date.now() >= predictionLockTimestamp(match);
+  return GROUP_MATCHES.some((m) => m.id === match.id);
 }
 
 function firstKickoff(matches) {
