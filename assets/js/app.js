@@ -580,171 +580,221 @@ function setSaveStatus(scope, saving) {
 // -----------------------------------------------------------------
 // BRACKET PREDICTIONS
 // -----------------------------------------------------------------
+const FUNNEL_ROUNDS = [
+  { id: "r16",       label: "Round of 16",    short: "R16",   pickCount: 16, per: SCORING.r16Team,  poolKey: null,  fromLabel: "the 32 qualified teams" },
+  { id: "qf",        label: "Quarter-finals", short: "QF",    pickCount: 8,  per: SCORING.qfTeam,    poolKey: "r16", fromLabel: "your Round of 16 picks" },
+  { id: "sf",        label: "Semi-finals",    short: "SF",    pickCount: 4,  per: SCORING.sfTeam,    poolKey: "qf",  fromLabel: "your quarter-final picks" },
+  { id: "finalists", label: "Final",          short: "Final", pickCount: 2,  per: SCORING.finalTeam, poolKey: "sf",  fromLabel: "your semi-final picks" },
+];
+
+let bracketCtx = { knockoutTeams: [], locked: false, ready: false };
+
+function poolFor(round, b) {
+  return round.poolKey ? asList(b[round.poolKey]) : bracketCtx.knockoutTeams;
+}
+
+// Keep every round a subset of the round before it; silently drop anything that no longer fits.
+function pruneBracket(b, knockoutTeams) {
+  const inSet = new Set(knockoutTeams);
+  const r16 = asList(b.r16).filter((t) => inSet.has(t)).slice(0, 16);
+  const r16set = new Set(r16);
+  const qf = asList(b.qf).filter((t) => r16set.has(t)).slice(0, 8);
+  const qfset = new Set(qf);
+  const sf = asList(b.sf).filter((t) => qfset.has(t)).slice(0, 4);
+  const sfset = new Set(sf);
+  const finalists = asList(b.finalists).filter((t) => sfset.has(t)).slice(0, 2);
+  const finset = new Set(finalists);
+  return {
+    r16, qf, sf, finalists,
+    champion: finset.has(b.champion) ? b.champion : null,
+    third: sfset.has(b.third) ? b.third : null,
+  };
+}
+
 async function renderBracketTab() {
-  const root = $("#bracket-container");
-  const b = session.predictions.bracket || {};
   const results = await fetchResults();
   const knockoutTeams = confirmedKnockoutTeams(results);
-  const bracketLocked = isBracketPredictionLocked();
 
-  if (knockoutTeams.length < 32) {
+  bracketCtx = {
+    knockoutTeams,
+    locked: isBracketPredictionLocked(),
+    ready: knockoutTeams.length >= 32,
+  };
+
+  paintBracket();
+}
+
+function paintBracket() {
+  const root = $("#bracket-container");
+  const status = $("#bracket-save-status");
+  const { knockoutTeams, locked, ready } = bracketCtx;
+
+  if (!ready) {
     root.innerHTML = `
-      <div class="bracket-section">
-        <div class="bracket-section__head">
-          <div class="bracket-section__title">Knockout not open yet</div>
-          <div class="bracket-section__meta">${knockoutTeams.length} / 32 teams confirmed</div>
-        </div>
-        <p class="panel-sub" style="margin-bottom:0">
-          The bracket will open after admin confirms the 32 teams that reach the knockout stage.
+      <div class="ko-empty">
+        <div class="ko-empty__badge">🔒</div>
+        <h3 class="ko-empty__title">Knockout opens soon</h3>
+        <p class="ko-empty__text">
+          Once the group stage finishes, the admin confirms the 32 teams that made it through.
+          The moment that happens your bracket unlocks here — pick your way from the Round of 16 all the way to the trophy.
         </p>
+        <div class="ko-empty__meta">${knockoutTeams.length} / 32 teams confirmed</div>
       </div>`;
-
-    $("#bracket-save-status").textContent = "Locked until admin confirms the Round of 32";
+    if (status) status.textContent = "Locked until admin confirms the Round of 32";
     return;
   }
 
-  $("#bracket-save-status").textContent = bracketLocked
-    ? "Locked 1 hour before first Round of 32 UK kick-off"
-    : "Saved automatically";
+  session.predictions.bracket = pruneBracket(session.predictions.bracket || {}, knockoutTeams);
+  const b = session.predictions.bracket;
 
-  root.dataset.locked = bracketLocked ? "true" : "false";
+  root.innerHTML =
+    bracketRail(b) +
+    `<div class="ko-rounds">` +
+      FUNNEL_ROUNDS.map((round) => bracketRoundCard(round, b, locked)).join("") +
+      bracketTrophyCard(b, locked) +
+    `</div>`;
 
-  const sections = PLAYER_BRACKET_ROUNDS
-    .map((r) => bracketSection(r, asList(b[r.id]), knockoutTeams, bracketLocked))
-    .join("");
+  if (status) {
+    status.textContent = locked ? "Locked — picks are final" : "Saved automatically";
+  }
 
-  const finals = bracketFinals(b, knockoutTeams, bracketLocked);
-
-  root.innerHTML = sections + finals;
-
-  if (!bracketLocked) wireBracket(root);
+  if (!locked) wireBracket(root);
 }
 
-function bracketSection(round, picks, teamCodes = TEAM_CODES, locked = false) {
-  const lockedClass = locked ? "is-locked" : "";
-  const disabled = locked ? "disabled" : "";
+function bracketRail(b) {
+  const nodes = [
+    ...FUNNEL_ROUNDS.map((r) => ({ short: r.short, have: asList(b[r.id]).length, need: r.pickCount })),
+    { short: "🏆", have: b.champion ? 1 : 0, need: 1 },
+    { short: "🥉", have: b.third ? 1 : 0, need: 1 },
+  ];
 
   return `
-    <div class="bracket-section" data-round="${round.id}">
-      <div class="bracket-section__head">
-        <div class="bracket-section__title">${round.label}</div>
-        <div class="bracket-section__meta">Pick ${round.pickCount} · ${round.per} pts each</div>
-      </div>
-      <div class="team-picker">
-        ${teamCodes.map((code) => {
-          const sel = picks.includes(code) ? "is-selected" : "";
-          const t = TEAMS[code];
-
-          return `
-            <button class="team-chip ${sel} ${lockedClass}" type="button" data-team="${code}" ${disabled}>
-              <img class="team-flag" src="${flagUrl(t.iso)}" alt="" loading="lazy" />
-              <span class="team-chip__name">${t.name}</span>
-            </button>`;
-        }).join("")}
-      </div>
-      <div class="picker-status" data-status="${round.id}">
-        Picked <strong>${picks.length} / ${round.pickCount}</strong>
-      </div>
+    <div class="ko-rail">
+      ${nodes.map((n, i) => {
+        const done = n.have >= n.need;
+        return `
+          <div class="ko-rail__node ${done ? "is-done" : ""}">
+            <div class="ko-rail__count">${n.have}<span>/${n.need}</span></div>
+            <div class="ko-rail__label">${n.short}</div>
+          </div>
+          ${i < nodes.length - 1 ? `<div class="ko-rail__arrow">→</div>` : ""}`;
+      }).join("")}
     </div>`;
 }
 
-function bracketFinals(b, teamCodes = TEAM_CODES, locked = false) {
-  const disabled = locked ? "disabled" : "";
+function koTeamCard(code, opts) {
+  const t = TEAMS[code];
+  const selected = opts.selected ? "is-selected" : "";
+  const dimmed = opts.dimmed ? "is-dimmed" : "";
+  const disabled = opts.disabled ? "disabled" : "";
+  return `
+    <button type="button" class="ko-team ${selected} ${dimmed}" data-round="${opts.roundId}" data-team="${code}" ${disabled}>
+      <img class="ko-team__flag" src="${flagUrl(t.iso)}" alt="" loading="lazy" />
+      <span class="ko-team__name">${t.name}</span>
+      <span class="ko-team__code">${code}</span>
+      <span class="ko-team__tick" aria-hidden="true">✓</span>
+    </button>`;
+}
 
-  const opts = (selected) => teamCodes.map((c) => `
-    <option value="${c}" ${selected === c ? "selected" : ""}>${TEAMS[c].name} (${c})</option>
-  `).join("");
+function bracketRoundCard(round, b, locked) {
+  const picks = asList(b[round.id]);
+  const pickSet = new Set(picks);
+  const pool = poolFor(round, b);
+  const full = picks.length >= round.pickCount;
+  const pct = Math.min(100, Math.round((picks.length / round.pickCount) * 100));
+
+  let body;
+  if (!pool.length) {
+    body = `<div class="ko-round__hint">Finish ${round.fromLabel} to unlock this round.</div>`;
+  } else {
+    body = `
+      <div class="ko-grid">
+        ${pool.map((code) => koTeamCard(code, {
+          roundId: round.id,
+          selected: pickSet.has(code),
+          dimmed: full && !pickSet.has(code),
+          disabled: locked || (full && !pickSet.has(code)),
+        })).join("")}
+      </div>`;
+    if (round.poolKey && pool.length < round.pickCount) {
+      body += `<div class="ko-round__hint">Pick more in ${round.fromLabel} to choose all ${round.pickCount}.</div>`;
+    }
+  }
 
   return `
-    <div class="bracket-section">
-      <div class="bracket-section__head">
-        <div class="bracket-section__title">Trophy picks</div>
-        <div class="bracket-section__meta">Champion +${SCORING.champion} · 3rd place +${SCORING.third}</div>
-      </div>
-      <div class="final-pick-row">
-        <div class="final-pick">
-          <div class="final-pick__label">🏆 Champion</div>
-          <select id="final-champion" ${disabled}>
-            <option value="">— pick —</option>${opts(b.champion)}
-          </select>
-        </div>
-        <div class="final-pick">
-          <div class="final-pick__label">🥉 3rd place (Bronze final winner)</div>
-          <select id="final-third" ${disabled}>
-            <option value="">— pick —</option>${opts(b.third)}
-          </select>
-        </div>
-      </div>
-    </div>`;
+    <section class="ko-round" data-round="${round.id}">
+      <header class="ko-round__head">
+        <div class="ko-round__title">${round.label}</div>
+        <div class="ko-round__meta">+${round.per} pts / team</div>
+      </header>
+      <div class="ko-progress"><div class="ko-progress__fill" style="width:${pct}%"></div></div>
+      <div class="ko-round__count ${full ? "is-full" : ""}">${picks.length} / ${round.pickCount} picked</div>
+      ${body}
+    </section>`;
+}
+
+function bracketTrophyCard(b, locked) {
+  const finalists = asList(b.finalists);
+  const semis = asList(b.sf);
+
+  const champBody = finalists.length
+    ? `<div class="ko-grid ko-grid--trophy">
+         ${finalists.map((code) => koTeamCard(code, { roundId: "champion", selected: b.champion === code, dimmed: false, disabled: locked })).join("")}
+       </div>`
+    : `<div class="ko-round__hint">Pick your 2 finalists first.</div>`;
+
+  const thirdBody = semis.length
+    ? `<div class="ko-grid ko-grid--trophy">
+         ${semis.map((code) => koTeamCard(code, { roundId: "third", selected: b.third === code, dimmed: false, disabled: locked })).join("")}
+       </div>`
+    : `<div class="ko-round__hint">Pick your semi-finalists first.</div>`;
+
+  return `
+    <section class="ko-round ko-round--trophy">
+      <header class="ko-round__head">
+        <div class="ko-round__title">🏆 Champion</div>
+        <div class="ko-round__meta">+${SCORING.champion} pts</div>
+      </header>
+      ${champBody}
+      <header class="ko-round__head" style="margin-top:22px">
+        <div class="ko-round__title">🥉 Third place</div>
+        <div class="ko-round__meta">+${SCORING.third} pts</div>
+      </header>
+      ${thirdBody}
+    </section>`;
 }
 
 function wireBracket(root) {
-  $$(".bracket-section[data-round]", root).forEach((section) => {
-    const roundId = section.dataset.round;
-    const round = BRACKET_ROUNDS.find((r) => r.id === roundId);
-    const status = $(`[data-status="${roundId}"]`, section);
+  $$(".ko-team", root).forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (isBracketPredictionLocked()) {
+        renderBracketTab();
+        return;
+      }
 
-    $$(".team-chip", section).forEach((chip) => {
-      chip.addEventListener("click", () => {
-        if (isBracketPredictionLocked()) {
-          renderBracketTab();
-          return;
-        }
+      const roundId = btn.dataset.round;
+      const team = btn.dataset.team;
+      const b = session.predictions.bracket = session.predictions.bracket || {};
 
-        const team = chip.dataset.team;
-
-        session.predictions.bracket = session.predictions.bracket || {};
-
-        const picks = new Set(asList(session.predictions.bracket[roundId]));
-
+      if (roundId === "champion") {
+        b.champion = b.champion === team ? null : team;
+      } else if (roundId === "third") {
+        b.third = b.third === team ? null : team;
+      } else {
+        const round = FUNNEL_ROUNDS.find((r) => r.id === roundId);
+        const picks = new Set(asList(b[roundId]));
         if (picks.has(team)) {
           picks.delete(team);
         } else {
           if (picks.size >= round.pickCount) return;
           picks.add(team);
         }
+        b[roundId] = [...picks];
+      }
 
-        session.predictions.bracket[roundId] = [...picks];
-
-        chip.classList.toggle("is-selected");
-
-        const n = picks.size;
-
-        status.innerHTML = `Picked <strong>${n} / ${round.pickCount}</strong>`;
-        status.classList.toggle("is-full", n === round.pickCount);
-
-        bracketSaveDebounced();
-      });
+      paintBracket();
+      bracketSaveDebounced();
     });
-  });
-
-  const b = session.predictions.bracket || {};
-
-  if (b.champion) $("#final-champion").value = b.champion;
-  if (b.third) $("#final-third").value = b.third;
-
-  $("#final-champion").addEventListener("change", (e) => {
-    if (isBracketPredictionLocked()) {
-      renderBracketTab();
-      return;
-    }
-
-    session.predictions.bracket = session.predictions.bracket || {};
-    session.predictions.bracket.champion = e.target.value || null;
-
-    bracketSaveDebounced();
-  });
-
-  $("#final-third").addEventListener("change", (e) => {
-    if (isBracketPredictionLocked()) {
-      renderBracketTab();
-      return;
-    }
-
-    session.predictions.bracket = session.predictions.bracket || {};
-    session.predictions.bracket.third = e.target.value || null;
-
-    bracketSaveDebounced();
   });
 }
 
