@@ -1,5 +1,5 @@
 // =================================================================
-// FWC 26 PREDICTIONS POOL — main application
+// FWC 26 PREDICTIONS POOL — main app
 // =================================================================
 
 import {
@@ -620,18 +620,20 @@ const KO_MATCHES = [
   { id: "r32-15", round: "R32", home: { team: "SUI" }, away: { team: "ALG" } },
   { id: "r32-16", round: "R32", home: { team: "ARG" }, away: { team: "CPV" } },
 
-  { id: "r16-1", round: "R16", home: { win: "r32-1"  }, away: { win: "r32-2"  } },
-  { id: "r16-2", round: "R16", home: { win: "r32-3"  }, away: { win: "r32-4"  } },
-  { id: "r16-3", round: "R16", home: { win: "r32-5"  }, away: { win: "r32-6"  } },
+  // Round of 16 wiring follows the official FIFA bracket (matches 89–96).
+  { id: "r16-1", round: "R16", home: { win: "r32-2"  }, away: { win: "r32-6"  } },
+  { id: "r16-2", round: "R16", home: { win: "r32-1"  }, away: { win: "r32-5"  } },
+  { id: "r16-3", round: "R16", home: { win: "r32-3"  }, away: { win: "r32-4"  } },
   { id: "r16-4", round: "R16", home: { win: "r32-7"  }, away: { win: "r32-8"  } },
   { id: "r16-5", round: "R16", home: { win: "r32-9"  }, away: { win: "r32-10" } },
   { id: "r16-6", round: "R16", home: { win: "r32-11" }, away: { win: "r32-12" } },
-  { id: "r16-7", round: "R16", home: { win: "r32-13" }, away: { win: "r32-14" } },
-  { id: "r16-8", round: "R16", home: { win: "r32-15" }, away: { win: "r32-16" } },
+  { id: "r16-7", round: "R16", home: { win: "r32-16" }, away: { win: "r32-14" } },
+  { id: "r16-8", round: "R16", home: { win: "r32-13" }, away: { win: "r32-15" } },
 
+  // Quarter-finals (matches 97–100).
   { id: "qf-1", round: "QF", home: { win: "r16-1" }, away: { win: "r16-2" } },
-  { id: "qf-2", round: "QF", home: { win: "r16-3" }, away: { win: "r16-4" } },
-  { id: "qf-3", round: "QF", home: { win: "r16-5" }, away: { win: "r16-6" } },
+  { id: "qf-2", round: "QF", home: { win: "r16-5" }, away: { win: "r16-6" } },
+  { id: "qf-3", round: "QF", home: { win: "r16-3" }, away: { win: "r16-4" } },
   { id: "qf-4", round: "QF", home: { win: "r16-7" }, away: { win: "r16-8" } },
 
   { id: "sf-1", round: "SF", home: { win: "qf-1" }, away: { win: "qf-2" } },
