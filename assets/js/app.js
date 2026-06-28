@@ -26,8 +26,12 @@ const session = {
   code: null,
   name: null,
   isTest: false,
+  isAdmin: false,
   predictions: null,
 };
+
+// Leaderboard stays hidden from players until you flip this to false (reveal after the final).
+const LEADERBOARD_LOCKED = true;
 
 const SESSION_KEY = "fwc26-login";
 const PREDICTION_LOCK_MS = 60 * 60 * 1000;
@@ -402,9 +406,17 @@ async function launchApp() {
   $("#user-name-display").textContent = session.name + (session.isTest ? " ★" : "");
 
   show("view-predictions");
-  renderGroupsTab();
+
+  // Group stage is closed: hide its tab entirely and open straight onto the bracket.
+  const groupsTabBtn = document.querySelector('#app-tabs [data-tab="groups"]');
+  if (groupsTabBtn) groupsTabBtn.style.display = "none";
+
+  $$("#app-tabs .app-tab").forEach((b) => b.classList.toggle("is-active", b.dataset.tab === "bracket"));
+  $("#tab-groups").classList.add("hidden");
+  $("#tab-bracket").classList.remove("hidden");
+  $("#tab-leaderboard").classList.add("hidden");
+
   await renderBracketTab();
-  renderLeaderboardTab();
   updateUserScoreDisplay();
 }
 
@@ -1003,6 +1015,17 @@ async function computeLeaderboard() {
 async function renderLeaderboardTab() {
   const root = $("#leaderboard-container");
 
+  if (LEADERBOARD_LOCKED && !session.isAdmin) {
+    root.innerHTML = `
+      <div class="ko-empty">
+        <div class="ko-empty__badge">🔒</div>
+        <h3 class="ko-empty__title">Locked</h3>
+        <p class="ko-empty__text">Final results will be revealed after the Final. No peeking — let the suspense build.</p>
+        <div class="ko-empty__meta">Standings hidden until the trophy is lifted</div>
+      </div>`;
+    return;
+  }
+
   root.innerHTML = `
     <div class="leaderboard-row leaderboard-row--head">
       <div class="lb-rank">#</div>
@@ -1105,6 +1128,8 @@ function gotoAdmin() {
 }
 
 function unlockAdmin() {
+  session.isAdmin = true;
+
   $("#admin-gate").classList.add("hidden");
   $("#admin-tools").classList.remove("hidden");
 
