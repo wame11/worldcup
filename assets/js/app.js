@@ -578,247 +578,318 @@ function setSaveStatus(scope, saving) {
 }
 
 // -----------------------------------------------------------------
-// BRACKET PREDICTIONS
+// KNOCKOUT BRACKET — score predictor, winners auto-advance
+//   Scoring per match:  +7 correct winner,  +7 exact score (max 14)
+//   Whole bracket locks at one fixed UTC instant (same worldwide).
 // -----------------------------------------------------------------
-const FUNNEL_ROUNDS = [
-  { id: "r16",       label: "Round of 16",    short: "R16",   pickCount: 16, per: SCORING.r16Team,  poolKey: null,  fromLabel: "the 32 qualified teams" },
-  { id: "qf",        label: "Quarter-finals", short: "QF",    pickCount: 8,  per: SCORING.qfTeam,    poolKey: "r16", fromLabel: "your Round of 16 picks" },
-  { id: "sf",        label: "Semi-finals",    short: "SF",    pickCount: 4,  per: SCORING.sfTeam,    poolKey: "qf",  fromLabel: "your quarter-final picks" },
-  { id: "finalists", label: "Final",          short: "Final", pickCount: 2,  per: SCORING.finalTeam, poolKey: "sf",  fromLabel: "your semi-final picks" },
+const KNOCKOUT_LOCK_UTC = Date.UTC(2026, 5, 28, 19, 0, 0); // 28 Jun 2026, 20:00 UK (BST) = 19:00 UTC
+const KNOCKOUT_LOCK_LABEL = "8:00 PM UK · Sun 28 Jun";
+function isKnockoutLocked() { return Date.now() >= KNOCKOUT_LOCK_UTC; }
+
+const KO_WIN_POINTS = 7;
+const KO_EXACT_POINTS = 7;
+
+// Bracket structure. home/away is either {team} (fixed R32), {win:id} or {lose:id}.
+const KO_MATCHES = [
+  { id: "r32-1",  round: "R32", home: { team: "RSA" }, away: { team: "CAN" } },
+  { id: "r32-2",  round: "R32", home: { team: "GER" }, away: { team: "PAR" } },
+  { id: "r32-3",  round: "R32", home: { team: "BRA" }, away: { team: "JPN" } },
+  { id: "r32-4",  round: "R32", home: { team: "CIV" }, away: { team: "NOR" } },
+  { id: "r32-5",  round: "R32", home: { team: "NED" }, away: { team: "MAR" } },
+  { id: "r32-6",  round: "R32", home: { team: "FRA" }, away: { team: "SWE" } },
+  { id: "r32-7",  round: "R32", home: { team: "MEX" }, away: { team: "ECU" } },
+  { id: "r32-8",  round: "R32", home: { team: "ENG" }, away: { team: "COD" } },
+  { id: "r32-9",  round: "R32", home: { team: "POR" }, away: { team: "CRO" } },
+  { id: "r32-10", round: "R32", home: { team: "ESP" }, away: { team: "AUT" } },
+  { id: "r32-11", round: "R32", home: { team: "USA" }, away: { team: "BIH" } },
+  { id: "r32-12", round: "R32", home: { team: "BEL" }, away: { team: "SEN" } },
+  { id: "r32-13", round: "R32", home: { team: "COL" }, away: { team: "GHA" } },
+  { id: "r32-14", round: "R32", home: { team: "AUS" }, away: { team: "EGY" } },
+  { id: "r32-15", round: "R32", home: { team: "SUI" }, away: { team: "ALG" } },
+  { id: "r32-16", round: "R32", home: { team: "ARG" }, away: { team: "CPV" } },
+
+  { id: "r16-1", round: "R16", home: { win: "r32-1"  }, away: { win: "r32-2"  } },
+  { id: "r16-2", round: "R16", home: { win: "r32-3"  }, away: { win: "r32-4"  } },
+  { id: "r16-3", round: "R16", home: { win: "r32-5"  }, away: { win: "r32-6"  } },
+  { id: "r16-4", round: "R16", home: { win: "r32-7"  }, away: { win: "r32-8"  } },
+  { id: "r16-5", round: "R16", home: { win: "r32-9"  }, away: { win: "r32-10" } },
+  { id: "r16-6", round: "R16", home: { win: "r32-11" }, away: { win: "r32-12" } },
+  { id: "r16-7", round: "R16", home: { win: "r32-13" }, away: { win: "r32-14" } },
+  { id: "r16-8", round: "R16", home: { win: "r32-15" }, away: { win: "r32-16" } },
+
+  { id: "qf-1", round: "QF", home: { win: "r16-1" }, away: { win: "r16-2" } },
+  { id: "qf-2", round: "QF", home: { win: "r16-3" }, away: { win: "r16-4" } },
+  { id: "qf-3", round: "QF", home: { win: "r16-5" }, away: { win: "r16-6" } },
+  { id: "qf-4", round: "QF", home: { win: "r16-7" }, away: { win: "r16-8" } },
+
+  { id: "sf-1", round: "SF", home: { win: "qf-1" }, away: { win: "qf-2" } },
+  { id: "sf-2", round: "SF", home: { win: "qf-3" }, away: { win: "qf-4" } },
+
+  { id: "third", round: "THIRD", home: { lose: "sf-1" }, away: { lose: "sf-2" } },
+  { id: "final", round: "FINAL", home: { win:  "sf-1" }, away: { win:  "sf-2" } },
 ];
 
-let bracketCtx = { knockoutTeams: [], locked: false, ready: false };
+const KO_BY_ID = Object.fromEntries(KO_MATCHES.map((m) => [m.id, m]));
 
-function poolFor(round, b) {
-  return round.poolKey ? asList(b[round.poolKey]) : bracketCtx.knockoutTeams;
+const KO_SHORT = {
+  "r32-1": "R32-1", "r32-2": "R32-2", "r32-3": "R32-3", "r32-4": "R32-4",
+  "r32-5": "R32-5", "r32-6": "R32-6", "r32-7": "R32-7", "r32-8": "R32-8",
+  "r32-9": "R32-9", "r32-10": "R32-10", "r32-11": "R32-11", "r32-12": "R32-12",
+  "r32-13": "R32-13", "r32-14": "R32-14", "r32-15": "R32-15", "r32-16": "R32-16",
+  "r16-1": "R16-1", "r16-2": "R16-2", "r16-3": "R16-3", "r16-4": "R16-4",
+  "r16-5": "R16-5", "r16-6": "R16-6", "r16-7": "R16-7", "r16-8": "R16-8",
+  "qf-1": "QF1", "qf-2": "QF2", "qf-3": "QF3", "qf-4": "QF4",
+  "sf-1": "SF1", "sf-2": "SF2", "third": "3rd play-off", "final": "Final",
+};
+
+const KO_ROUND_ORDER = ["R32", "R16", "QF", "SF", "THIRD", "FINAL"];
+const KO_ROUND_LABEL = {
+  R32: "Round of 32", R16: "Round of 16", QF: "Quarter-finals",
+  SF: "Semi-finals", THIRD: "Third-place play-off", FINAL: "Final",
+};
+
+function koName(code) { return code && TEAMS[code] ? TEAMS[code].name : "—"; }
+function koFlag(code) { return code && TEAMS[code] ? flagUrl(TEAMS[code].iso) : ""; }
+
+function koDecideWinner(pred, home, away) {
+  if (!home || !away) return null;
+  const h = toScoreNumber(pred && pred.h);
+  const a = toScoreNumber(pred && pred.a);
+  if (h === null || a === null) return null;
+  if (h > a) return home;
+  if (a > h) return away;
+  if (pred.pen === "home") return home;
+  if (pred.pen === "away") return away;
+  return null;
 }
 
-// Keep every round a subset of the round before it; silently drop anything that no longer fits.
-function pruneBracket(b, knockoutTeams) {
-  const inSet = new Set(knockoutTeams);
-  const r16 = asList(b.r16).filter((t) => inSet.has(t)).slice(0, 16);
-  const r16set = new Set(r16);
-  const qf = asList(b.qf).filter((t) => r16set.has(t)).slice(0, 8);
-  const qfset = new Set(qf);
-  const sf = asList(b.sf).filter((t) => qfset.has(t)).slice(0, 4);
-  const sfset = new Set(sf);
-  const finalists = asList(b.finalists).filter((t) => sfset.has(t)).slice(0, 2);
-  const finset = new Set(finalists);
-  return {
-    r16, qf, sf, finalists,
-    champion: finset.has(b.champion) ? b.champion : null,
-    third: sfset.has(b.third) ? b.third : null,
-  };
-}
+// Resolve every match's participants + winner/loser from a set of predictions.
+function koResolveAll(ko) {
+  ko = ko || {};
+  const cache = {};
 
-async function renderBracketTab() {
-  const results = await fetchResults();
-  const knockoutTeams = confirmedKnockoutTeams(results);
-
-  bracketCtx = {
-    knockoutTeams,
-    locked: isBracketPredictionLocked(),
-    ready: knockoutTeams.length >= 32,
-  };
-
-  paintBracket();
-}
-
-function paintBracket() {
-  const root = $("#bracket-container");
-  const status = $("#bracket-save-status");
-  const { knockoutTeams, locked, ready } = bracketCtx;
-
-  if (!ready) {
-    root.innerHTML = `
-      <div class="ko-empty">
-        <div class="ko-empty__badge">🔒</div>
-        <h3 class="ko-empty__title">Knockout opens soon</h3>
-        <p class="ko-empty__text">
-          Once the group stage finishes, the admin confirms the 32 teams that made it through.
-          The moment that happens your bracket unlocks here — pick your way from the Round of 16 all the way to the trophy.
-        </p>
-        <div class="ko-empty__meta">${knockoutTeams.length} / 32 teams confirmed</div>
-      </div>`;
-    if (status) status.textContent = "Locked until admin confirms the Round of 32";
-    return;
+  function side(ref) {
+    if (ref.team) return ref.team;
+    const src = teams(ref.win || ref.lose);
+    if (ref.win) return src.winner;
+    return src.loser;
   }
 
-  session.predictions.bracket = pruneBracket(session.predictions.bracket || {}, knockoutTeams);
-  const b = session.predictions.bracket;
-
-  root.innerHTML =
-    bracketRail(b) +
-    `<div class="ko-rounds">` +
-      FUNNEL_ROUNDS.map((round) => bracketRoundCard(round, b, locked)).join("") +
-      bracketTrophyCard(b, locked) +
-    `</div>`;
-
-  if (status) {
-    status.textContent = locked ? "Locked — picks are final" : "Saved automatically";
+  function teams(id) {
+    if (cache[id]) return cache[id];
+    cache[id] = { home: null, away: null, winner: null, loser: null }; // guard against loops
+    const m = KO_BY_ID[id];
+    const home = side(m.home);
+    const away = side(m.away);
+    const winner = koDecideWinner(ko[id], home, away);
+    const loser = winner ? (winner === home ? away : home) : null;
+    const r = { home, away, winner, loser };
+    cache[id] = r;
+    return r;
   }
 
-  if (!locked) wireBracket(root);
+  KO_MATCHES.forEach((m) => teams(m.id));
+  return cache;
 }
 
-function bracketRail(b) {
-  const nodes = [
-    ...FUNNEL_ROUNDS.map((r) => ({ short: r.short, have: asList(b[r.id]).length, need: r.pickCount })),
-    { short: "🏆", have: b.champion ? 1 : 0, need: 1 },
-    { short: "🥉", have: b.third ? 1 : 0, need: 1 },
-  ];
+// New knockout scoring: compares a player's bracket to the actual (admin) bracket.
+function scoreKnockout(playerKo, resultsKo) {
+  let total = 0;
+  let correct = 0;
 
-  return `
-    <div class="ko-rail">
-      ${nodes.map((n, i) => {
-        const done = n.have >= n.need;
-        return `
-          <div class="ko-rail__node ${done ? "is-done" : ""}">
-            <div class="ko-rail__count">${n.have}<span>/${n.need}</span></div>
-            <div class="ko-rail__label">${n.short}</div>
-          </div>
-          ${i < nodes.length - 1 ? `<div class="ko-rail__arrow">→</div>` : ""}`;
-      }).join("")}
-    </div>`;
-}
+  const P = koResolveAll(playerKo || {});
+  const R = koResolveAll(resultsKo || {});
 
-function koTeamCard(code, opts) {
-  const t = TEAMS[code];
-  const selected = opts.selected ? "is-selected" : "";
-  const dimmed = opts.dimmed ? "is-dimmed" : "";
-  const disabled = opts.disabled ? "disabled" : "";
-  return `
-    <button type="button" class="ko-team ${selected} ${dimmed}" data-round="${opts.roundId}" data-team="${code}" ${disabled}>
-      <img class="ko-team__flag" src="${flagUrl(t.iso)}" alt="" loading="lazy" />
-      <span class="ko-team__name">${t.name}</span>
-      <span class="ko-team__code">${code}</span>
-      <span class="ko-team__tick" aria-hidden="true">✓</span>
-    </button>`;
-}
+  for (const m of KO_MATCHES) {
+    const r = R[m.id];
+    const rp = (resultsKo || {})[m.id] || {};
+    const rH = toScoreNumber(rp.h);
+    const rA = toScoreNumber(rp.a);
 
-function bracketRoundCard(round, b, locked) {
-  const picks = asList(b[round.id]);
-  const pickSet = new Set(picks);
-  const pool = poolFor(round, b);
-  const full = picks.length >= round.pickCount;
-  const pct = Math.min(100, Math.round((picks.length / round.pickCount) * 100));
+    if (!r.winner || rH === null || rA === null) continue; // result not entered yet
 
-  let body;
-  if (!pool.length) {
-    body = `<div class="ko-round__hint">Finish ${round.fromLabel} to unlock this round.</div>`;
-  } else {
-    body = `
-      <div class="ko-grid">
-        ${pool.map((code) => koTeamCard(code, {
-          roundId: round.id,
-          selected: pickSet.has(code),
-          dimmed: full && !pickSet.has(code),
-          disabled: locked || (full && !pickSet.has(code)),
-        })).join("")}
-      </div>`;
-    if (round.poolKey && pool.length < round.pickCount) {
-      body += `<div class="ko-round__hint">Pick more in ${round.fromLabel} to choose all ${round.pickCount}.</div>`;
+    const p = P[m.id];
+    const pp = (playerKo || {})[m.id] || {};
+    const pH = toScoreNumber(pp.h);
+    const pA = toScoreNumber(pp.a);
+
+    if (p.winner && p.winner === r.winner) {
+      total += KO_WIN_POINTS;
+      correct += 1;
+    }
+
+    if (p.home && p.away && pH !== null && pA !== null) {
+      const sameMatch =
+        (p.home === r.home && p.away === r.away) ||
+        (p.home === r.away && p.away === r.home);
+
+      if (sameMatch) {
+        const pg = { [p.home]: pH, [p.away]: pA };
+        const rg = { [r.home]: rH, [r.away]: rA };
+        if (pg[r.home] === rg[r.home] && pg[r.away] === rg[r.away]) {
+          total += KO_EXACT_POINTS;
+          correct += 1;
+        }
+      }
     }
   }
 
-  return `
-    <section class="ko-round" data-round="${round.id}">
-      <header class="ko-round__head">
-        <div class="ko-round__title">${round.label}</div>
-        <div class="ko-round__meta">+${round.per} pts / team</div>
-      </header>
-      <div class="ko-progress"><div class="ko-progress__fill" style="width:${pct}%"></div></div>
-      <div class="ko-round__count ${full ? "is-full" : ""}">${picks.length} / ${round.pickCount} picked</div>
-      ${body}
-    </section>`;
+  return { total, correct };
 }
 
-function bracketTrophyCard(b, locked) {
-  const finalists = asList(b.finalists);
-  const semis = asList(b.sf);
-
-  const champBody = finalists.length
-    ? `<div class="ko-grid ko-grid--trophy">
-         ${finalists.map((code) => koTeamCard(code, { roundId: "champion", selected: b.champion === code, dimmed: false, disabled: locked })).join("")}
-       </div>`
-    : `<div class="ko-round__hint">Pick your 2 finalists first.</div>`;
-
-  const thirdBody = semis.length
-    ? `<div class="ko-grid ko-grid--trophy">
-         ${semis.map((code) => koTeamCard(code, { roundId: "third", selected: b.third === code, dimmed: false, disabled: locked })).join("")}
-       </div>`
-    : `<div class="ko-round__hint">Pick your semi-finalists first.</div>`;
-
-  return `
-    <section class="ko-round ko-round--trophy">
-      <header class="ko-round__head">
-        <div class="ko-round__title">🏆 Champion</div>
-        <div class="ko-round__meta">+${SCORING.champion} pts</div>
-      </header>
-      ${champBody}
-      <header class="ko-round__head" style="margin-top:22px">
-        <div class="ko-round__title">🥉 Third place</div>
-        <div class="ko-round__meta">+${SCORING.third} pts</div>
-      </header>
-      ${thirdBody}
-    </section>`;
+// -----------------------------------------------------------------
+// Bracket renderer (shared by player + admin)
+// -----------------------------------------------------------------
+function koTbdLabel(ref) {
+  const src = KO_SHORT[ref.win || ref.lose] || "TBD";
+  return (ref.win ? "Winner of " : "Loser of ") + src;
 }
 
-function wireBracket(root) {
-  $$(".ko-team", root).forEach((btn) => {
+function koMatchCard(m, resolved, ko, locked) {
+  const t = resolved[m.id];
+  const pred = ko[m.id] || {};
+  const ready = !!(t.home && t.away);
+  const h = toScoreNumber(pred.h);
+  const a = toScoreNumber(pred.a);
+  const isDraw = ready && h !== null && a !== null && h === a;
+  const dis = (locked || !ready) ? "disabled" : "";
+  const winSide = t.winner ? (t.winner === t.home ? "home" : "away") : null;
+
+  const row = (sideKey) => {
+    const code = sideKey === "home" ? t.home : t.away;
+    const ref = sideKey === "home" ? m.home : m.away;
+    const win = winSide === sideKey ? "is-win" : "";
+    const val = sideKey === "home" ? (pred.h ?? "") : (pred.a ?? "");
+    const label = ready ? koName(code) : koTbdLabel(ref);
+
+    return `
+      <div class="kb-row ${ready ? "" : "kb-row--tbd"} ${win}">
+        ${ready
+          ? `<img class="kb-flag" src="${koFlag(code)}" alt="" loading="lazy" />`
+          : `<span class="kb-flag kb-flag--tbd"></span>`}
+        <span class="kb-team">${label}</span>
+        <input class="kb-score" type="number" inputmode="numeric" min="0" max="20"
+               value="${val}" data-match="${m.id}" data-side="${sideKey}" ${dis} />
+      </div>`;
+  };
+
+  const pen = (isDraw)
+    ? `<div class="kb-pen">
+         <span class="kb-pen__label">Pens won by</span>
+         <button type="button" class="kb-pen__btn ${pred.pen === "home" ? "is-active" : ""}" data-match="${m.id}" data-pen-pick="home" ${dis}>${koName(t.home)}</button>
+         <button type="button" class="kb-pen__btn ${pred.pen === "away" ? "is-active" : ""}" data-match="${m.id}" data-pen-pick="away" ${dis}>${koName(t.away)}</button>
+       </div>`
+    : "";
+
+  return `
+    <div class="kb-match" data-match="${m.id}">
+      <div class="kb-match__no">${KO_SHORT[m.id]}</div>
+      ${row("home")}
+      ${row("away")}
+      ${pen}
+    </div>`;
+}
+
+function paintKoBracket(root, opts) {
+  const ko = opts.ko;
+  const locked = opts.isLocked();
+  const resolved = koResolveAll(ko);
+
+  root.innerHTML = KO_ROUND_ORDER.map((rd) => {
+    const ms = KO_MATCHES.filter((m) => m.round === rd);
+    return `
+      <section class="kb-round">
+        <h3 class="kb-round__title">${KO_ROUND_LABEL[rd]}</h3>
+        <div class="kb-matches">${ms.map((m) => koMatchCard(m, resolved, ko, locked)).join("")}</div>
+      </section>`;
+  }).join("");
+
+  if (locked) return;
+
+  $$(".kb-score", root).forEach((inp) => {
+    inp.addEventListener("change", () => {
+      const id = inp.dataset.match;
+      const v = inp.value === "" ? null : Math.max(0, Math.min(20, parseInt(inp.value, 10) || 0));
+      ko[id] = ko[id] || {};
+      ko[id][inp.dataset.side === "home" ? "h" : "a"] = v;
+      opts.onSave();
+      paintKoBracket(root, opts);
+    });
+  });
+
+  $$("[data-pen-pick]", root).forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (isBracketPredictionLocked()) {
-        renderBracketTab();
-        return;
-      }
-
-      const roundId = btn.dataset.round;
-      const team = btn.dataset.team;
-      const b = session.predictions.bracket = session.predictions.bracket || {};
-
-      if (roundId === "champion") {
-        b.champion = b.champion === team ? null : team;
-      } else if (roundId === "third") {
-        b.third = b.third === team ? null : team;
-      } else {
-        const round = FUNNEL_ROUNDS.find((r) => r.id === roundId);
-        const picks = new Set(asList(b[roundId]));
-        if (picks.has(team)) {
-          picks.delete(team);
-        } else {
-          if (picks.size >= round.pickCount) return;
-          picks.add(team);
-        }
-        b[roundId] = [...picks];
-      }
-
-      paintBracket();
-      bracketSaveDebounced();
+      const id = btn.dataset.match;
+      ko[id] = ko[id] || {};
+      ko[id].pen = btn.dataset.penPick;
+      opts.onSave();
+      paintKoBracket(root, opts);
     });
   });
 }
 
-const bracketSaveDebounced = debounce(async () => {
-  if (isBracketPredictionLocked()) {
-    $("#bracket-save-status").textContent = "Locked 1 hour before first Round of 32 UK kick-off";
-    renderBracketTab();
-    return;
-  }
+// -----------------------------------------------------------------
+// PLAYER bracket tab
+// -----------------------------------------------------------------
+function ensureKo() {
+  session.predictions = session.predictions || {};
+  session.predictions.ko = session.predictions.ko || {};
+  return session.predictions.ko;
+}
 
+function koIntroHtml() {
+  const locked = isKnockoutLocked();
+  return `
+    <h2 class="panel-title">Knockout bracket</h2>
+    <p class="panel-sub">
+      Predict the <strong>score</strong> of every match. The winner you pick automatically advances to the
+      next round, all the way to the Final — so build your whole bracket from the Round of 32 to the trophy.
+      Drew it? Tap who goes through on penalties.
+    </p>
+    <div class="scoring-key">
+      <span><i class="dot-orange"></i>Correct winner <strong>+7</strong></span>
+      <span><i class="dot-blue"></i>Exact score <strong>+7 more</strong> (14 max per match)</span>
+    </div>
+    <p class="panel-sub" style="margin-top:12px">
+      ${locked
+        ? "🔒 Predictions are now locked."
+        : `🔒 Everything locks at <strong>${KNOCKOUT_LOCK_LABEL}</strong>. That's one fixed moment worldwide — 9 PM in France, etc. — so changing your phone's location or using a VPN can't get you extra time.`}
+    </p>`;
+}
+
+const koSaveDebounced = debounce(async () => {
+  if (isKnockoutLocked()) { renderBracketTab(); return; }
   setSaveStatus("bracket", true);
-
   try {
-    await savePredictions(session.code, {
-      name: session.name,
-      bracket: session.predictions.bracket,
-    });
+    await savePredictions(session.code, { name: session.name, ko: session.predictions.ko });
   } catch (e) {
     console.error(e);
   }
-
   setSaveStatus("bracket", false);
   updateUserScoreDisplay();
 }, 600);
+
+async function renderBracketTab() {
+  const intro = document.querySelector("#tab-bracket .panel-intro");
+  if (intro) intro.innerHTML = koIntroHtml();
+
+  const status = $("#bracket-save-status");
+  if (status) {
+    status.textContent = isKnockoutLocked()
+      ? "Locked — predictions are final"
+      : `Saved automatically · locks ${KNOCKOUT_LOCK_LABEL}`;
+  }
+
+  paintKoBracket($("#bracket-container"), {
+    ko: ensureKo(),
+    isLocked: () => isKnockoutLocked(),
+    onSave: () => koSaveDebounced(),
+  });
+}
+
+async function saveKoResults(ko) {
+  await update(ref(db, "results/global"), { ko, updatedAt: serverTimestamp() });
+}
 
 // -----------------------------------------------------------------
 // SCORING
@@ -903,30 +974,9 @@ function scoreOnePerson(p, results) {
     }
   }
 
-  const bp = p.bracket || {};
-  const br = results.bracket || {};
-
-  for (const round of PLAYER_BRACKET_ROUNDS) {
-    const picks = asList(bp[round.id]);
-    const actual = asList(br[round.id]);
-
-    if (!actual.length) continue;
-
-    const hits = picks.filter((t) => actual.includes(t)).length;
-
-    total += hits * round.per;
-    correct += hits;
-  }
-
-  if (results.champion && bp.champion === results.champion) {
-    total += SCORING.champion;
-    correct += 1;
-  }
-
-  if (results.third && bp.third === results.third) {
-    total += SCORING.third;
-    correct += 1;
-  }
+  const koPts = scoreKnockout(p.ko, results.ko);
+  total += koPts.total;
+  correct += koPts.correct;
 
   return { total, correct };
 }
@@ -1380,7 +1430,6 @@ async function renderAdminResults() {
   const results = await fetchResults();
 
   results.groups = results.groups || {};
-  results.bracket = results.bracket || {};
 
   const groupRows = GROUP_MATCHES.map((m) => {
     const r = results.groups[m.id] || {};
@@ -1410,90 +1459,19 @@ async function renderAdminResults() {
       </div>`;
   }).join("");
 
-  const bracketRows = BRACKET_ROUNDS.map((round) => {
-    const picks = asList(results.bracket[round.id]);
-
-    return `
-      <div class="bracket-section" data-result-round="${round.id}" style="margin-top:24px">
-        <div class="bracket-section__head">
-          <div class="bracket-section__title">${round.label}</div>
-          <div class="bracket-section__meta">Pick the ${round.pickCount} teams that ACTUALLY reached this round</div>
-        </div>
-        <div class="team-picker">
-          ${TEAM_CODES.map((c) => {
-            const sel = picks.includes(c) ? "is-selected" : "";
-
-            return `
-              <button class="team-chip ${sel}" type="button" data-result-team="${c}" data-result-round-chip="${round.id}">
-                <img class="team-flag" src="${flagUrl(TEAMS[c].iso)}" alt="" />
-                <span class="team-chip__name">${TEAMS[c].name}</span>
-              </button>`;
-          }).join("")}
-        </div>
-        <div class="picker-status">Picked <strong data-result-count="${round.id}">${picks.length} / ${round.pickCount}</strong></div>
-      </div>`;
-  }).join("");
-
-  const trophyOpts = TEAM_CODES
-    .map((c) => `<option value="${c}">${TEAMS[c].name} (${c})</option>`)
-    .join("");
-
   root.innerHTML = `
     <h4 style="font-family:var(--font-mono);font-size:11px;letter-spacing:.2em;color:var(--ink-mute);margin:24px 0 8px;text-transform:uppercase">Group stage results</h4>
     ${groupRows}
-    <h4 style="font-family:var(--font-mono);font-size:11px;letter-spacing:.2em;color:var(--ink-mute);margin:24px 0 8px;text-transform:uppercase">Knockout actuals</h4>
-    ${bracketRows}
-    <div class="bracket-section" style="margin-top:24px">
-      <div class="bracket-section__head">
-        <div class="bracket-section__title">Trophy results</div>
-      </div>
-      <div class="final-pick-row">
-        <div class="final-pick">
-          <div class="final-pick__label">🏆 Champion</div>
-          <select id="result-champion">
-            <option value="">—</option>${trophyOpts}
-          </select>
-        </div>
-        <div class="final-pick">
-          <div class="final-pick__label">🥉 3rd place</div>
-          <select id="result-third">
-            <option value="">—</option>${trophyOpts}
-          </select>
-        </div>
-      </div>
-    </div>`;
+    <h4 style="font-family:var(--font-mono);font-size:11px;letter-spacing:.2em;color:var(--ink-mute);margin:32px 0 8px;text-transform:uppercase">Knockout results — enter the real scores</h4>
+    <p class="panel-sub" style="margin-bottom:14px">Type the actual score of each match; winners advance automatically and players are scored against this. The Final winner is the champion; the play-off winner takes 3rd.</p>
+    <div id="admin-ko" class="kb-bracket"></div>`;
 
-  if (results.champion) $("#result-champion").value = results.champion;
-  if (results.third) $("#result-third").value = results.third;
+  // ---- group results wiring ----
+  const adminGroupsDirty = {};
 
-  const adminResultsDirty = {
-    groups: {},
-    bracket: {},
-    champion: undefined,
-    third: undefined,
-  };
-
-  const saveAdminDebounced = debounce(async () => {
+  const saveGroupsDebounced = debounce(async () => {
     const merged = await fetchResults();
-
-    merged.groups = {
-      ...(merged.groups || {}),
-      ...adminResultsDirty.groups,
-    };
-
-    merged.bracket = {
-      ...(merged.bracket || {}),
-      ...adminResultsDirty.bracket,
-    };
-
-    if (adminResultsDirty.champion !== undefined) {
-      merged.champion = adminResultsDirty.champion;
-    }
-
-    if (adminResultsDirty.third !== undefined) {
-      merged.third = adminResultsDirty.third;
-    }
-
+    merged.groups = { ...(merged.groups || {}), ...adminGroupsDirty };
     await saveResults(merged);
     renderAdminLeaderboard();
   }, 600);
@@ -1501,19 +1479,13 @@ async function renderAdminResults() {
   $$(".result-row .outcome-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       const mid = btn.dataset.match;
-
-      $$(`.result-row[data-result-match="${mid}"] .outcome-btn`).forEach((b) => {
-        b.classList.remove("is-selected");
-      });
-
+      $$(`.result-row[data-result-match="${mid}"] .outcome-btn`).forEach((b) => b.classList.remove("is-selected"));
       btn.classList.add("is-selected");
-
-      adminResultsDirty.groups[mid] = {
-        ...(adminResultsDirty.groups[mid] || results.groups[mid] || {}),
+      adminGroupsDirty[mid] = {
+        ...(adminGroupsDirty[mid] || results.groups[mid] || {}),
         winner: btn.dataset.resultPick,
       };
-
-      saveAdminDebounced();
+      saveGroupsDebounced();
     });
   });
 
@@ -1522,71 +1494,30 @@ async function renderAdminResults() {
       const mid = input.dataset.match;
       const side = input.dataset.resultSide === "home" ? "scoreHome" : "scoreAway";
       const val = input.value === "" ? null : parseInt(input.value, 10) || 0;
+      adminGroupsDirty[mid] = { ...(adminGroupsDirty[mid] || results.groups[mid] || {}), [side]: val };
 
-      adminResultsDirty.groups[mid] = {
-        ...(adminResultsDirty.groups[mid] || results.groups[mid] || {}),
-        [side]: val,
-      };
-
-      const p = adminResultsDirty.groups[mid];
-
+      const p = adminGroupsDirty[mid];
       if (typeof p.scoreHome === "number" && typeof p.scoreAway === "number") {
-        p.winner = p.scoreHome > p.scoreAway
-          ? "HOME"
-          : p.scoreHome < p.scoreAway
-            ? "AWAY"
-            : "DRAW";
-
+        p.winner = p.scoreHome > p.scoreAway ? "HOME" : p.scoreHome < p.scoreAway ? "AWAY" : "DRAW";
         $$(`.result-row[data-result-match="${mid}"] .outcome-btn`).forEach((b) => {
           b.classList.toggle("is-selected", b.dataset.resultPick === p.winner);
         });
       }
-
-      saveAdminDebounced();
+      saveGroupsDebounced();
     });
   });
 
-  $$("[data-result-round-chip]").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      const round = chip.dataset.resultRoundChip;
-      const team = chip.dataset.resultTeam;
-      const roundObj = BRACKET_ROUNDS.find((r) => r.id === round);
+  // ---- knockout results wiring (same bracket, admin mode, never locked) ----
+  const koAdmin = results.ko ? { ...results.ko } : {};
+  const saveKoDebounced = debounce(async () => {
+    await saveKoResults(koAdmin);
+    renderAdminLeaderboard();
+  }, 600);
 
-      const source = Object.prototype.hasOwnProperty.call(adminResultsDirty.bracket, round)
-        ? adminResultsDirty.bracket[round]
-        : results.bracket[round];
-
-      const arr = new Set(asList(source));
-
-      if (arr.has(team)) {
-        arr.delete(team);
-      } else {
-        if (arr.size >= roundObj.pickCount) return;
-        arr.add(team);
-      }
-
-      adminResultsDirty.bracket[round] = [...arr];
-
-      chip.classList.toggle("is-selected");
-
-      const cnt = $(`[data-result-count="${round}"]`);
-
-      if (cnt) {
-        cnt.textContent = `${arr.size} / ${roundObj.pickCount}`;
-      }
-
-      saveAdminDebounced();
-    });
-  });
-
-  $("#result-champion")?.addEventListener("change", (e) => {
-    adminResultsDirty.champion = e.target.value || null;
-    saveAdminDebounced();
-  });
-
-  $("#result-third")?.addEventListener("change", (e) => {
-    adminResultsDirty.third = e.target.value || null;
-    saveAdminDebounced();
+  paintKoBracket($("#admin-ko"), {
+    ko: koAdmin,
+    isLocked: () => false,
+    onSave: () => saveKoDebounced(),
   });
 }
 
