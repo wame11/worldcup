@@ -254,6 +254,22 @@
   </div>
 
   <!-- Firebase + app -->
-  <script type="module" src="assets/js/app.js"></script>
+  <script>
+    (() => {
+      const originalDateUTC = Date.UTC;
+      const oldLockUTC = originalDateUTC(2026, 5, 28, 19, 0, 0);
+      const extendedLockUTC = originalDateUTC(2026, 5, 29, 17, 0, 0); // 29 Jun 2026, 18:00 UK (BST) = 17:00 UTC
+
+      Date.UTC = (...args) => {
+        const value = originalDateUTC(...args);
+        return value === oldLockUTC ? extendedLockUTC : value;
+      };
+
+      window.addEventListener("load", () => {
+        Date.UTC = originalDateUTC;
+      }, { once: true });
+    })();
+  </script>
+  <script type="module" src="assets/js/app.js?v=20260629-1800uk"></script>
 </body>
 </html>
